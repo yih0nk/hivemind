@@ -8,11 +8,19 @@ rules:
   - ""
   resources:
   - configmaps
-  - events
   - pods
   verbs:
   - get
   - list
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
 - apiGroups:
   - incidents.yihanhong.dev
   resources:
@@ -23,6 +31,12 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - incidents.yihanhong.dev
+  resources:
+  - incidenttriages/finalizers
+  verbs:
+  - update
 - apiGroups:
   - incidents.yihanhong.dev
   resources:

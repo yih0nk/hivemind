@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,7 +46,14 @@ var _ = Describe("IncidentTriage Controller", func() {
 		}
 		incidenttriage := &incidentsv1alpha1.IncidentTriage{}
 
+		controllerReconciler := &IncidentTriageReconciler{}
+
 		BeforeEach(func() {
+			*controllerReconciler = IncidentTriageReconciler{
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: record.NewFakeRecorder(32),
+			}
 			By("creating the custom resource for the Kind IncidentTriage")
 			err := k8sClient.Get(ctx, typeNamespacedName, incidenttriage)
 			if err != nil && errors.IsNotFound(err) {
@@ -65,30 +73,39 @@ var _ = Describe("IncidentTriage Controller", func() {
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &incidentsv1alpha1.IncidentTriage{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Cleanup the specific resource instance IncidentTriage")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &IncidentTriageReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+			// The delete only completes once the reconciler releases the finalizer.
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(errors.IsNotFound(err)).To(BeTrue())
+		})
+		It("should drive the resource through the phase state machine", func() {
+			By("Reconciling until the terminal phase is reached")
+			// finalizer -> Pending -> Triaging -> Remediated -> completion stamp
+			for range 5 {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
 
-			By("verifying the resource was marked Pending")
 			updated := &incidentsv1alpha1.IncidentTriage{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
-			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhasePending))
+			Expect(updated.Finalizers).To(ContainElement(cleanupFinalizer))
+			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
+			Expect(updated.Status.AgentOutputs).To(HaveLen(len(agentNames)))
+			Expect(updated.Status.StartTime).NotTo(BeNil())
+			Expect(updated.Status.CompletionTime).NotTo(BeNil())
+			Expect(updated.Status.Message).To(Equal("triage complete"))
 		})
 	})
 })
