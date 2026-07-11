@@ -4,6 +4,12 @@ metadata:
   labels:
     app.kubernetes.io/name: hivemind
     app.kubernetes.io/managed-by: kustomize
-  name: incidenttriage-sample
+  name: checkout-latency-spike
 spec:
-  # TODO(user): Add fields here
+  alertName: CheckoutP99LatencyHigh
+  severity: critical
+  affectedNamespace: default
+  affectedPodSelector:
+    app: checkout
+  prometheusURL: http://prometheus.monitoring.svc:9090
+  githubRepo: yih0nk/hivemind
