@@ -181,7 +181,7 @@ func main() {
 	if err := (&controller.IncidentTriageReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("hivemind"),
+		Recorder: mgr.GetEventRecorder("hivemind"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "incidenttriage")
 		os.Exit(1)

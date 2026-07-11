@@ -36,10 +36,11 @@ func (r *IncidentTriageReconciler) patchStatus(ctx context.Context, triage *inci
 
 // emitEvent records a Kubernetes Event attached to the triage object,
 // visible in `kubectl describe incidenttriage`. eventType is
-// corev1.EventTypeNormal or corev1.EventTypeWarning.
+// corev1.EventTypeNormal or corev1.EventTypeWarning. The reason doubles
+// as the event's action field, which the events API requires.
 func (r *IncidentTriageReconciler) emitEvent(triage *incidentsv1alpha1.IncidentTriage, eventType, reason, message string) {
 	if r.Recorder == nil {
 		return
 	}
-	r.Recorder.Event(triage, eventType, reason, message)
+	r.Recorder.Eventf(triage, nil, eventType, reason, reason, "%s", message)
 }
