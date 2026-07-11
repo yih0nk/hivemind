@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,25 +34,33 @@ type IncidentTriageReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=pods;events;configmaps,verbs=get;list
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the IncidentTriage object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.24.1/pkg/reconcile
+// Reconcile drives an IncidentTriage toward completion. It is level-based:
+// it receives only a name/namespace and must re-derive all state from the
+// cluster, so every branch must be safe to run any number of times.
 func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var triage incidentsv1alpha1.IncidentTriage
+	if err := r.Get(ctx, req.NamespacedName, &triage); err != nil {
+		// Not-found means the CR was deleted between the event and now; nothing to do.
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	if triage.Status.Phase == "" {
+		patch := client.MergeFrom(triage.DeepCopy())
+		triage.Status.Phase = incidentsv1alpha1.PhasePending
+		triage.Status.Message = "awaiting agent dispatch"
+		if err := r.Status().Patch(ctx, &triage, patch); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.Info("incident registered", "alert", triage.Spec.AlertName, "severity", triage.Spec.Severity)
+	}
+
+	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

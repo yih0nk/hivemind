@@ -5,23 +5,24 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - events
+  - pods
+  verbs:
+  - get
+  - list
+- apiGroups:
   - incidents.yihanhong.dev
   resources:
   - incidenttriages
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
   - update
   - watch
-- apiGroups:
-  - incidents.yihanhong.dev
-  resources:
-  - incidenttriages/finalizers
-  verbs:
-  - update
 - apiGroups:
   - incidents.yihanhong.dev
   resources:
