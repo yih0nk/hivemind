@@ -54,7 +54,11 @@ var _ = Describe("IncidentTriage Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: incidentsv1alpha1.IncidentTriageSpec{
+						AlertName:         "TestAlertFiring",
+						Severity:          incidentsv1alpha1.SeverityCritical,
+						AffectedNamespace: "default",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
@@ -80,8 +84,11 @@ var _ = Describe("IncidentTriage Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("verifying the resource was marked Pending")
+			updated := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhasePending))
 		})
 	})
 })

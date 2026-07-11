@@ -87,7 +87,7 @@ func (c *OllamaClient) Complete(ctx context.Context, systemPrompt, userPrompt st
 	if err != nil {
 		return "", fmt.Errorf("calling ollama: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
