@@ -1,0 +1,126 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: incidenttriages.incidents.yihanhong.dev
+spec:
+  group: incidents.yihanhong.dev
+  names:
+    kind: IncidentTriage
+    listKind: IncidentTriageList
+    plural: incidenttriages
+    singular: incidenttriage
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.severity
+      name: Severity
+      type: string
+    - jsonPath: .status.prURL
+      name: PR
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: IncidentTriage is the Schema for the incidenttriages API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of IncidentTriage
+            properties:
+              affectedNamespace:
+                description: affectedNamespace scopes which namespace the agents investigate.
+                type: string
+              affectedPodSelector:
+                additionalProperties:
+                  type: string
+                description: affectedPodSelector narrows investigation to pods matching
+                  these labels.
+                type: object
+              alertName:
+                description: alertName is the alert that triggered this triage (e.g.
+                  from Alertmanager).
+                type: string
+              githubRepo:
+                description: githubRepo (owner/repo) is where the root-cause PR gets
+                  opened.
+                type: string
+              prometheusURL:
+                description: prometheusURL is where the metrics-correlator agent queries.
+                type: string
+              severity:
+                description: severity is how urgent the incident is.
+                enum:
+                - critical
+                - warning
+                - info
+                type: string
+            required:
+            - affectedNamespace
+            - alertName
+            - severity
+            type: object
+          status:
+            description: status defines the observed state of IncidentTriage
+            properties:
+              agentOutputs:
+                additionalProperties:
+                  type: string
+                description: agentOutputs maps agent name (log-triage, metrics-correlator,
+                  ...) to its report.
+                type: object
+              completionTime:
+                description: completionTime is when the triage run finished (success
+                  or failure).
+                format: date-time
+                type: string
+              message:
+                description: message is a human-readable note about the current phase.
+                type: string
+              phase:
+                description: phase is the current lifecycle stage of the triage run.
+                enum:
+                - Pending
+                - Triaging
+                - Remediated
+                - Failed
+                type: string
+              prURL:
+                description: prURL links to the root-cause report PR once opened.
+                type: string
+              startTime:
+                description: startTime is when agent dispatch began.
+                format: date-time
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

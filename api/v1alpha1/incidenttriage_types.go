@@ -21,46 +21,87 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// Severity classifies how urgent the incident is.
+// +kubebuilder:validation:Enum=critical;warning;info
+type Severity string
 
-// IncidentTriageSpec defines the desired state of IncidentTriage
+const (
+	SeverityCritical Severity = "critical"
+	SeverityWarning  Severity = "warning"
+	SeverityInfo     Severity = "info"
+)
+
+// TriagePhase tracks where the triage run is in its lifecycle.
+// +kubebuilder:validation:Enum=Pending;Triaging;Remediated;Failed
+type TriagePhase string
+
+const (
+	PhasePending    TriagePhase = "Pending"
+	PhaseTriaging   TriagePhase = "Triaging"
+	PhaseRemediated TriagePhase = "Remediated"
+	PhaseFailed     TriagePhase = "Failed"
+)
+
+// IncidentTriageSpec is the user's request: what fired and where to look.
 type IncidentTriageSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// alertName is the alert that triggered this triage (e.g. from Alertmanager).
+	// +required
+	AlertName string `json:"alertName"`
 
-	// foo is an example field of IncidentTriage. Edit incidenttriage_types.go to remove/update
+	// severity is how urgent the incident is.
+	// +required
+	Severity Severity `json:"severity"`
+
+	// affectedNamespace scopes which namespace the agents investigate.
+	// +required
+	AffectedNamespace string `json:"affectedNamespace"`
+
+	// affectedPodSelector narrows investigation to pods matching these labels.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	AffectedPodSelector map[string]string `json:"affectedPodSelector,omitempty"`
+
+	// prometheusURL is where the metrics-correlator agent queries.
+	// +optional
+	PrometheusURL string `json:"prometheusURL,omitempty"`
+
+	// githubRepo (owner/repo) is where the root-cause PR gets opened.
+	// +optional
+	GithubRepo string `json:"githubRepo,omitempty"`
 }
 
-// IncidentTriageStatus defines the observed state of IncidentTriage.
+// IncidentTriageStatus is what the operator observed and produced.
 type IncidentTriageStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the IncidentTriage resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
+	// phase is the current lifecycle stage of the triage run.
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Phase TriagePhase `json:"phase,omitempty"`
+
+	// agentOutputs maps agent name (log-triage, metrics-correlator, ...) to its report.
+	// +optional
+	AgentOutputs map[string]string `json:"agentOutputs,omitempty"`
+
+	// prURL links to the root-cause report PR once opened.
+	// +optional
+	PRURL string `json:"prURL,omitempty"`
+
+	// startTime is when agent dispatch began.
+	// +optional
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// completionTime is when the triage run finished (success or failure).
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// message is a human-readable note about the current phase.
+	// +optional
+	Message string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Severity",type=string,JSONPath=`.spec.severity`
+// +kubebuilder:printcolumn:name="PR",type=string,JSONPath=`.status.prURL`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // IncidentTriage is the Schema for the incidenttriages API
 type IncidentTriage struct {
