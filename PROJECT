@@ -8,4 +8,14 @@ layout:
 - go.kubebuilder.io/v4
 projectName: hivemind
 repo: github.com/yihanhong/hivemind
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: yihanhong.dev
+  group: incidents
+  kind: IncidentTriage
+  path: github.com/yihanhong/hivemind/api/v1alpha1
+  version: v1alpha1
 version: "3"

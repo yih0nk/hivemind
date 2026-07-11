@@ -1,0 +1,9 @@
+apiVersion: incidents.yihanhong.dev/v1alpha1
+kind: IncidentTriage
+metadata:
+  labels:
+    app.kubernetes.io/name: hivemind
+    app.kubernetes.io/managed-by: kustomize
+  name: incidenttriage-sample
+spec:
+  # TODO(user): Add fields here

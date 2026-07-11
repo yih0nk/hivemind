@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- incidents_v1alpha1_incidenttriage.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
