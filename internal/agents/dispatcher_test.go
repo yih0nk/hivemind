@@ -45,7 +45,7 @@ func (s *stubAgent) Run(ctx context.Context, _ *incidentsv1alpha1.IncidentTriage
 
 func TestDispatchCollectsAllOutputs(t *testing.T) {
 	d := &Dispatcher{Agents: []Agent{
-		&stubAgent{name: "logtriage", output: "logs look bad"},
+		&stubAgent{name: logTriageName, output: "logs look bad"},
 		&stubAgent{name: "metricscorrelator", output: "cpu spiked"},
 	}}
 
@@ -56,15 +56,15 @@ func TestDispatchCollectsAllOutputs(t *testing.T) {
 	if len(outputs) != 2 {
 		t.Fatalf("got %d outputs, want 2: %v", len(outputs), outputs)
 	}
-	if outputs["logtriage"] != "logs look bad" {
-		t.Errorf("logtriage output = %q", outputs["logtriage"])
+	if outputs[logTriageName] != "logs look bad" {
+		t.Errorf("logtriage output = %q", outputs[logTriageName])
 	}
 }
 
 func TestDispatchPartialFailureKeepsSurvivors(t *testing.T) {
 	boom := errors.New("prometheus unreachable")
 	d := &Dispatcher{Agents: []Agent{
-		&stubAgent{name: "logtriage", output: "ok"},
+		&stubAgent{name: logTriageName, output: "ok"},
 		&stubAgent{name: "metricscorrelator", err: boom},
 	}}
 
@@ -75,7 +75,7 @@ func TestDispatchPartialFailureKeepsSurvivors(t *testing.T) {
 	if !strings.Contains(err.Error(), "metricscorrelator") {
 		t.Errorf("error should name the failing agent, got %q", err)
 	}
-	if outputs["logtriage"] != "ok" {
+	if outputs[logTriageName] != "ok" {
 		t.Errorf("surviving agent output lost: %v", outputs)
 	}
 	if _, present := outputs["metricscorrelator"]; present {
