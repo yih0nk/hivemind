@@ -17,9 +17,12 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
+	"net/http"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -31,12 +34,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
 	"github.com/yihanhong/hivemind/internal/controller"
+	amwebhook "github.com/yihanhong/hivemind/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -194,6 +199,40 @@ func main() {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Failed to set up ready check")
+		os.Exit(1)
+	}
+
+	webhookAddr := ":8080"
+	if port := os.Getenv("HIVEMIND_WEBHOOK_PORT"); port != "" {
+		webhookAddr = ":" + port
+	}
+	alertmanagerMux := http.NewServeMux()
+	alertmanagerMux.Handle("POST /webhook", amwebhook.NewAlertmanagerHandler(mgr.GetClient()))
+	alertmanagerMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	alertmanagerServer := &http.Server{
+		Addr:              webhookAddr,
+		Handler:           alertmanagerMux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	// Registered as a Runnable so the manager owns its lifecycle: it
+	// starts with the manager and drains gracefully when the manager's
+	// context is canceled on SIGTERM.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		serveErr := make(chan error, 1)
+		go func() { serveErr <- alertmanagerServer.ListenAndServe() }()
+		setupLog.Info("Starting alertmanager webhook server", "addr", webhookAddr)
+		select {
+		case err := <-serveErr:
+			return err
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return alertmanagerServer.Shutdown(shutdownCtx)
+		}
+	})); err != nil {
+		setupLog.Error(err, "Failed to add alertmanager webhook server")
 		os.Exit(1)
 	}
 
