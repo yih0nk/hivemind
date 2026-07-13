@@ -51,6 +51,7 @@ type IncidentTriageReconciler struct {
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods;configmaps,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;create;patch
 
 // Reconcile drives an IncidentTriage through the phase state machine.
