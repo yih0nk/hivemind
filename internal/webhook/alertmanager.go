@@ -42,6 +42,11 @@ const (
 	// anything else (resolved) is ignored.
 	statusFiring = "firing"
 
+	// Alert labels the handler maps into the IncidentTriage spec.
+	labelAlertname = "alertname"
+	labelNamespace = "namespace"
+	labelSeverity  = "severity"
+
 	defaultPrometheusURL = "http://prometheus-operated:9090"
 	defaultNamespace     = "default"
 
@@ -146,7 +151,7 @@ func (h *AlertmanagerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 // triageFor maps one firing alert onto an IncidentTriage.
 func (h *AlertmanagerHandler) triageFor(alert Alert) *incidentsv1alpha1.IncidentTriage {
-	namespace := alert.Labels["namespace"]
+	namespace := alert.Labels[labelNamespace]
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
@@ -156,8 +161,8 @@ func (h *AlertmanagerHandler) triageFor(alert Alert) *incidentsv1alpha1.Incident
 			Namespace: namespace,
 		},
 		Spec: incidentsv1alpha1.IncidentTriageSpec{
-			AlertName:           alert.Labels["alertname"],
-			Severity:            severityFor(alert.Labels["severity"]),
+			AlertName:           alert.Labels[labelAlertname],
+			Severity:            severityFor(alert.Labels[labelSeverity]),
 			AffectedNamespace:   namespace,
 			AffectedPodSelector: podSelectorFor(alert.Labels),
 			PrometheusURL:       h.PrometheusURL,
@@ -203,7 +208,7 @@ func podSelectorFor(labels map[string]string) map[string]string {
 // firing of the same alert gets a new CR.
 func crName(alert Alert) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s/%d", alert.Fingerprint, alert.StartsAt.Unix()))
-	return sanitizeName(alert.Labels["alertname"]) + "-" + hex.EncodeToString(sum[:4])
+	return sanitizeName(alert.Labels[labelAlertname]) + "-" + hex.EncodeToString(sum[:4])
 }
 
 // sanitizeName squeezes an alertname into an RFC 1123 label: lowercase

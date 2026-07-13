@@ -32,6 +32,11 @@ import (
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
 )
 
+const (
+	testAlertname = "PodCrashLooping"
+	testNamespace = "payments"
+)
+
 func newTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -72,27 +77,27 @@ func TestAlertmanagerHandler(t *testing.T) {
 		{
 			name: "firing alert with all fields",
 			alerts: []Alert{firingAlert(map[string]string{
-				"alertname": "PodCrashLooping",
-				"severity":  "critical",
-				"namespace": "payments",
-				"pod_app":   "checkout",
-				"pod_tier":  "backend",
+				labelAlertname: testAlertname,
+				"severity":     "critical",
+				labelNamespace: testNamespace,
+				"pod_app":      "checkout",
+				"pod_tier":     "backend",
 			})},
 			wantCRs: 1,
 			check: func(t *testing.T, cr incidentsv1alpha1.IncidentTriage) {
 				if !strings.HasPrefix(cr.Name, "podcrashlooping-") {
 					t.Errorf("name %q missing sanitized alertname prefix", cr.Name)
 				}
-				if cr.Namespace != "payments" {
+				if cr.Namespace != testNamespace {
 					t.Errorf("namespace = %q, want payments", cr.Namespace)
 				}
-				if cr.Spec.AlertName != "PodCrashLooping" {
+				if cr.Spec.AlertName != testAlertname {
 					t.Errorf("alertName = %q, want PodCrashLooping", cr.Spec.AlertName)
 				}
 				if cr.Spec.Severity != incidentsv1alpha1.SeverityCritical {
 					t.Errorf("severity = %q, want critical", cr.Spec.Severity)
 				}
-				if cr.Spec.AffectedNamespace != "payments" {
+				if cr.Spec.AffectedNamespace != testNamespace {
 					t.Errorf("affectedNamespace = %q, want payments", cr.Spec.AffectedNamespace)
 				}
 				wantSelector := map[string]string{"app": "checkout", "tier": "backend"}
@@ -109,7 +114,7 @@ func TestAlertmanagerHandler(t *testing.T) {
 		},
 		{
 			name:    "missing severity and namespace get defaults",
-			alerts:  []Alert{firingAlert(map[string]string{"alertname": "HighLatency"})},
+			alerts:  []Alert{firingAlert(map[string]string{labelAlertname: "HighLatency"})},
 			wantCRs: 1,
 			check: func(t *testing.T, cr incidentsv1alpha1.IncidentTriage) {
 				if cr.Namespace != "default" {
@@ -127,15 +132,15 @@ func TestAlertmanagerHandler(t *testing.T) {
 			name: "resolved alert creates nothing",
 			alerts: []Alert{{
 				Status: "resolved",
-				Labels: map[string]string{"alertname": "PodCrashLooping"},
+				Labels: map[string]string{labelAlertname: testAlertname},
 			}},
 			wantCRs: 0,
 		},
 		{
 			name: "duplicate firing is idempotent",
 			alerts: []Alert{firingAlert(map[string]string{
-				"alertname": "PodCrashLooping",
-				"namespace": "payments",
+				labelAlertname: testAlertname,
+				labelNamespace: testNamespace,
 			})},
 			posts:   2,
 			wantCRs: 1,
