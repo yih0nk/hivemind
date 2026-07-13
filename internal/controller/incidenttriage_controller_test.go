@@ -29,7 +29,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	"github.com/yihanhong/hivemind/internal/agents"
 )
+
+// stubAgent stands in for real agents: the controller suite verifies the
+// phase machine and dispatcher wiring, not agent internals, which have
+// their own tests in internal/agents.
+type stubAgent struct {
+	name   string
+	output string
+}
+
+func (s stubAgent) Name() string { return s.name }
+
+func (s stubAgent) Run(context.Context, *incidentsv1alpha1.IncidentTriage) (string, error) {
+	return s.output, nil
+}
 
 var _ = Describe("IncidentTriage Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -53,6 +68,11 @@ var _ = Describe("IncidentTriage Controller", func() {
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
 				Recorder: events.NewFakeRecorder(32),
+				Dispatcher: &agents.Dispatcher{
+					Agents: []agents.Agent{
+						stubAgent{name: "logtriage", output: `{"likelyCause":"stub"}`},
+					},
+				},
 			}
 			By("creating the custom resource for the Kind IncidentTriage")
 			err := k8sClient.Get(ctx, typeNamespacedName, incidenttriage)
@@ -102,7 +122,7 @@ var _ = Describe("IncidentTriage Controller", func() {
 			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 			Expect(updated.Finalizers).To(ContainElement(cleanupFinalizer))
 			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
-			Expect(updated.Status.AgentOutputs).To(HaveLen(len(agentNames)))
+			Expect(updated.Status.AgentOutputs).To(HaveKeyWithValue("logtriage", `{"likelyCause":"stub"}`))
 			Expect(updated.Status.StartTime).NotTo(BeNil())
 			Expect(updated.Status.CompletionTime).NotTo(BeNil())
 			Expect(updated.Status.Message).To(Equal("triage complete"))

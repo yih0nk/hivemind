@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,20 +30,21 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	"github.com/yihanhong/hivemind/internal/agents"
 )
 
 // cleanupFinalizer blocks deletion until the operator has released any
 // external resources a triage run created (PR branches, scratch state).
 const cleanupFinalizer = "hivemind.io/cleanup"
 
-// agentNames lists the triage agents dispatched during the Triaging phase.
-var agentNames = []string{"logtriage", "metricscorrelator", "runbooklookup", "synthesizer"}
-
 // IncidentTriageReconciler reconciles a IncidentTriage object
 type IncidentTriageReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+
+	// Dispatcher fans out the triage agents during the Triaging phase.
+	Dispatcher *agents.Dispatcher
 }
 
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;update;patch
@@ -111,9 +111,16 @@ func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 
 	case incidentsv1alpha1.PhaseTriaging:
-		outputs, err := placeholderAgentOutputs(&triage)
-		if err != nil {
-			return ctrl.Result{}, err
+		outputs, dispatchErr := r.Dispatcher.Dispatch(ctx, &triage)
+		if dispatchErr != nil {
+			// Outputs from agents that succeeded are still persisted:
+			// a failed sibling must not erase their reports.
+			log.Error(dispatchErr, "agent dispatch failed", "alert", triage.Spec.AlertName)
+			return ctrl.Result{}, r.patchStatus(ctx, &triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+				s.AgentOutputs = outputs
+				s.Phase = incidentsv1alpha1.PhaseFailed
+				s.Message = fmt.Sprintf("agent dispatch failed: %v", dispatchErr)
+			})
 		}
 		return ctrl.Result{}, r.patchStatus(ctx, &triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
 			s.AgentOutputs = outputs
@@ -153,24 +160,6 @@ func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("ignoring unknown phase", "phase", triage.Status.Phase)
 		return ctrl.Result{}, nil
 	}
-}
-
-// placeholderAgentOutputs stands in for the real agent swarm (Day 4-6):
-// one canned JSON report per agent, keyed by agent name.
-func placeholderAgentOutputs(triage *incidentsv1alpha1.IncidentTriage) (map[string]string, error) {
-	outputs := make(map[string]string, len(agentNames))
-	for _, name := range agentNames {
-		report, err := json.Marshal(map[string]string{
-			"agent":   name,
-			"status":  "placeholder",
-			"summary": fmt.Sprintf("%s analysis for alert %q not yet implemented", name, triage.Spec.AlertName),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("marshaling %s placeholder: %w", name, err)
-		}
-		outputs[name] = string(report)
-	}
-	return outputs, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
