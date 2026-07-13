@@ -1,0 +1,44 @@
+# Alertmanager receiver for Hivemind.
+#
+# The Hivemind operator binary serves an Alertmanager-compatible webhook
+# on port 8080 at /webhook. Every firing alert routed here becomes an
+# IncidentTriage resource in the alert's namespace (label `namespace`,
+# falling back to "default").
+#
+# This file is a Helm values overlay for kube-prometheus-stack:
+#
+#   helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --reuse-values \
+#     -f config/samples/alertmanager-webhook-config.yaml
+#
+# If you manage Alertmanager directly, copy the `route` and `receivers`
+# sections below into your alertmanager.yml instead.
+#
+# Prerequisites:
+#   - A Service named `hivemind-webhook` exposing port 8080 of the
+#     operator pod. If Alertmanager runs in a different namespace, use
+#     the fully qualified URL instead, e.g.
+#     http://hivemind-webhook.hivemind-system.svc.cluster.local:8080/webhook
+#   - HIVEMIND_GITHUB_REPO (and optionally HIVEMIND_PROMETHEUS_URL) set
+#     on the operator Deployment, so created CRs carry a githubRepo.
+#
+# Note: this is Helm values, not a Kubernetes manifest — it is
+# intentionally not listed in kustomization.yaml.
+alertmanager:
+  config:
+    route:
+      receiver: hivemind
+      # Group repeats of the same alert so Hivemind sees one notification
+      # per firing episode instead of one per evaluation interval. The
+      # webhook also dedupes by (fingerprint, startsAt), so re-sends
+      # within one episode never create duplicate CRs.
+      group_by: ["alertname", "namespace"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+    receivers:
+      - name: hivemind
+        webhook_configs:
+          - url: http://hivemind-webhook:8080/webhook
+            # Hivemind ignores resolved alerts; don't bother sending them.
+            send_resolved: false
