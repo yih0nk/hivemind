@@ -30,6 +30,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -40,7 +41,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	"github.com/yihanhong/hivemind/internal/agents"
 	"github.com/yihanhong/hivemind/internal/controller"
+	"github.com/yihanhong/hivemind/internal/llm"
 	amwebhook "github.com/yihanhong/hivemind/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
@@ -159,7 +162,9 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	restConfig := ctrl.GetConfigOrDie()
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -183,10 +188,39 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The log subresource is not served by controller-runtime's client,
+	// so the log reader gets a plain client-go clientset.
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "Failed to build clientset")
+		os.Exit(1)
+	}
+
+	ollamaModel := os.Getenv("HIVEMIND_OLLAMA_MODEL")
+	if ollamaModel == "" {
+		ollamaModel = "llama3.2"
+	}
+	llmClient := llm.NewOllamaClient(ollamaModel)
+
+	// Agents get the uncached API reader: they list pods once per
+	// incident, which does not justify the cluster-wide pod informer the
+	// cached client would start (and the watch RBAC it would need).
+	dispatcher := &agents.Dispatcher{
+		Agents: []agents.Agent{
+			agents.NewLogTriageAgent(
+				mgr.GetAPIReader(),
+				&agents.ClientsetPodLogReader{Clientset: clientset},
+				llmClient,
+			),
+		},
+		MaxConcurrent: 4,
+	}
+
 	if err := (&controller.IncidentTriageReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorder("hivemind"),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorder("hivemind"),
+		Dispatcher: dispatcher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "incidenttriage")
 		os.Exit(1)
