@@ -30,6 +30,7 @@ import (
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
 	"github.com/yihanhong/hivemind/internal/agents"
+	"github.com/yihanhong/hivemind/internal/github"
 )
 
 // stubAgent stands in for real agents: the controller suite verifies the
@@ -73,6 +74,8 @@ var _ = Describe("IncidentTriage Controller", func() {
 						stubAgent{name: "logtriage", output: `{"likelyCause":"stub"}`},
 					},
 				},
+				Synthesizer: stubAgent{name: "synthesizer", output: `{"rootCause":"stub"}`},
+				PRClient:    &github.FakePRClient{PRURL: "https://github.com/acme/runbooks/pull/1"},
 			}
 			By("creating the custom resource for the Kind IncidentTriage")
 			err := k8sClient.Get(ctx, typeNamespacedName, incidenttriage)
@@ -86,6 +89,7 @@ var _ = Describe("IncidentTriage Controller", func() {
 						AlertName:         "TestAlertFiring",
 						Severity:          incidentsv1alpha1.SeverityCritical,
 						AffectedNamespace: "default",
+						GithubRepo:        "acme/runbooks",
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -110,8 +114,9 @@ var _ = Describe("IncidentTriage Controller", func() {
 		})
 		It("should drive the resource through the phase state machine", func() {
 			By("Reconciling until the terminal phase is reached")
-			// finalizer -> Pending -> Triaging -> Remediated -> completion stamp
-			for range 5 {
+			// finalizer -> Pending -> Triaging (evidence, synthesis, PR
+			// passes) -> Remediated -> completion stamp
+			for range 8 {
 				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 					NamespacedName: typeNamespacedName,
 				})
@@ -123,6 +128,8 @@ var _ = Describe("IncidentTriage Controller", func() {
 			Expect(updated.Finalizers).To(ContainElement(cleanupFinalizer))
 			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
 			Expect(updated.Status.AgentOutputs).To(HaveKeyWithValue("logtriage", `{"likelyCause":"stub"}`))
+			Expect(updated.Status.AgentOutputs).To(HaveKeyWithValue("synthesizer", `{"rootCause":"stub"}`))
+			Expect(updated.Status.PRURL).To(Equal("https://github.com/acme/runbooks/pull/1"))
 			Expect(updated.Status.StartTime).NotTo(BeNil())
 			Expect(updated.Status.CompletionTime).NotTo(BeNil())
 			Expect(updated.Status.Message).To(Equal("triage complete"))

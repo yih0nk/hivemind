@@ -31,6 +31,7 @@ import (
 
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
 	"github.com/yihanhong/hivemind/internal/agents"
+	"github.com/yihanhong/hivemind/internal/github"
 )
 
 // cleanupFinalizer blocks deletion until the operator has released any
@@ -43,8 +44,14 @@ type IncidentTriageReconciler struct {
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
 
-	// Dispatcher fans out the triage agents during the Triaging phase.
+	// Dispatcher fans out the evidence agents in the first Triaging pass.
 	Dispatcher *agents.Dispatcher
+	// Synthesizer runs alone in a second pass, reading the evidence
+	// agents' outputs from status -- persisted by the pass before it,
+	// never the one it runs in.
+	Synthesizer agents.Agent
+	// PRClient publishes the finished report as a pull request.
+	PRClient github.PRClient
 }
 
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;update;patch
@@ -112,22 +119,7 @@ func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 
 	case incidentsv1alpha1.PhaseTriaging:
-		outputs, dispatchErr := r.Dispatcher.Dispatch(ctx, &triage)
-		if dispatchErr != nil {
-			// Outputs from agents that succeeded are still persisted:
-			// a failed sibling must not erase their reports.
-			log.Error(dispatchErr, "agent dispatch failed", "alert", triage.Spec.AlertName)
-			return ctrl.Result{}, r.patchStatus(ctx, &triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-				s.AgentOutputs = outputs
-				s.Phase = incidentsv1alpha1.PhaseFailed
-				s.Message = fmt.Sprintf("agent dispatch failed: %v", dispatchErr)
-			})
-		}
-		return ctrl.Result{}, r.patchStatus(ctx, &triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-			s.AgentOutputs = outputs
-			s.Phase = NextPhase(incidentsv1alpha1.PhaseTriaging)
-			s.Message = "all agents reported"
-		})
+		return r.reconcileTriaging(ctx, &triage)
 
 	case incidentsv1alpha1.PhaseRemediated:
 		if triage.Status.CompletionTime == nil {
@@ -161,6 +153,77 @@ func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("ignoring unknown phase", "phase", triage.Status.Phase)
 		return ctrl.Result{}, nil
 	}
+}
+
+// reconcileTriaging advances the Triaging phase one pass per reconcile:
+// evidence agents first, then the synthesizer (which reads their outputs
+// from status, persisted by the previous pass), then the PR. Each pass
+// ends in a status patch, so a crash between passes loses at most one
+// pass's work, and the patch itself re-enqueues the object for the next.
+func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Pass 1: nothing gathered yet -- fan out the evidence agents.
+	if len(triage.Status.AgentOutputs) == 0 {
+		outputs, dispatchErr := r.Dispatcher.Dispatch(ctx, triage)
+		if dispatchErr != nil {
+			// Outputs from agents that succeeded are still persisted:
+			// a failed sibling must not erase their reports.
+			log.Error(dispatchErr, "agent dispatch failed", "alert", triage.Spec.AlertName)
+			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+				s.AgentOutputs = outputs
+				s.Phase = incidentsv1alpha1.PhaseFailed
+				s.Message = fmt.Sprintf("agent dispatch failed: %v", dispatchErr)
+			})
+		}
+		return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+			s.AgentOutputs = outputs
+			s.Message = "evidence agents reported; synthesizing"
+		})
+	}
+
+	// Pass 2: evidence persisted but not yet synthesized.
+	if _, ok := triage.Status.AgentOutputs[r.Synthesizer.Name()]; !ok {
+		report, err := r.Synthesizer.Run(ctx, triage)
+		if err != nil {
+			log.Error(err, "synthesis failed", "alert", triage.Spec.AlertName)
+			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+				s.Phase = incidentsv1alpha1.PhaseFailed
+				s.Message = fmt.Sprintf("synthesis failed: %v", err)
+			})
+		}
+		return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+			s.AgentOutputs[r.Synthesizer.Name()] = report
+			s.Message = "synthesis complete; publishing report"
+		})
+	}
+
+	// Pass 3: full report persisted -- publish it (when a repo is
+	// configured) and leave Triaging.
+	url := triage.Status.PRURL
+	if url == "" && triage.Spec.GithubRepo != "" {
+		var err error
+		url, err = github.OpenIncidentPR(ctx, r.PRClient, triage.Spec.GithubRepo, triage)
+		if err != nil {
+			log.Error(err, "opening incident PR failed", "alert", triage.Spec.AlertName)
+			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+				s.Phase = incidentsv1alpha1.PhaseFailed
+				s.Message = fmt.Sprintf("opening incident PR failed: %v", err)
+			})
+		}
+		r.emitEvent(triage, corev1.EventTypeNormal, "PROpened",
+			fmt.Sprintf("incident report for alert %q: %s", triage.Spec.AlertName, url))
+		log.Info("incident PR opened", "alert", triage.Spec.AlertName, "url", url)
+	}
+	message := "incident report published"
+	if url == "" {
+		message = "no GitHub repo configured; skipping PR"
+	}
+	return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+		s.PRURL = url
+		s.Phase = NextPhase(incidentsv1alpha1.PhaseTriaging)
+		s.Message = message
+	})
 }
 
 // SetupWithManager sets up the controller with the Manager.
