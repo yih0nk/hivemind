@@ -34,6 +34,7 @@ import (
 )
 
 const (
+	testAlert     = "PodCrashLooping"
 	testNamespace = "payments"
 	validReport   = `{"errorLines":["OOMKilled"],"likelyCause":"memory leak","confidence":0.8,"recommendedAction":"raise limits"}`
 )
@@ -147,7 +148,7 @@ func TestLogTriageAgentRun(t *testing.T) {
 
 			triage := &incidentsv1alpha1.IncidentTriage{
 				Spec: incidentsv1alpha1.IncidentTriageSpec{
-					AlertName:           "PodCrashLooping",
+					AlertName:           testAlert,
 					Severity:            incidentsv1alpha1.SeverityCritical,
 					AffectedNamespace:   testNamespace,
 					AffectedPodSelector: map[string]string{"app": "checkout"},
