@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - incidents_v1alpha1_incidenttriage.yaml
+- runbooks.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
