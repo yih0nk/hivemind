@@ -72,6 +72,12 @@ spec:
               prometheusURL:
                 description: prometheusURL is where the metrics-correlator agent queries.
                 type: string
+              runbookConfigMap:
+                description: |-
+                  runbookConfigMap names the ConfigMap (in the operator's namespace)
+                  holding runbooks for the runbook-lookup agent. Defaults to
+                  "hivemind-runbooks" when empty.
+                type: string
               severity:
                 description: severity is how urgent the incident is.
                 enum:

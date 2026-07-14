@@ -67,6 +67,12 @@ type IncidentTriageSpec struct {
 	// githubRepo (owner/repo) is where the root-cause PR gets opened.
 	// +optional
 	GithubRepo string `json:"githubRepo,omitempty"`
+
+	// runbookConfigMap names the ConfigMap (in the operator's namespace)
+	// holding runbooks for the runbook-lookup agent. Defaults to
+	// "hivemind-runbooks" when empty.
+	// +optional
+	RunbookConfigMap string `json:"runbookConfigMap,omitempty"`
 }
 
 // IncidentTriageStatus is what the operator observed and produced.
