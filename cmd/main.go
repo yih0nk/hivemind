@@ -43,6 +43,7 @@ import (
 	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
 	"github.com/yihanhong/hivemind/internal/agents"
 	"github.com/yihanhong/hivemind/internal/controller"
+	"github.com/yihanhong/hivemind/internal/github"
 	"github.com/yihanhong/hivemind/internal/llm"
 	amwebhook "github.com/yihanhong/hivemind/internal/webhook"
 	// +kubebuilder:scaffold:imports
@@ -216,6 +217,17 @@ func main() {
 		operatorNamespace = "hivemind-system"
 	}
 
+	// Without a token the operator still runs end to end: the fake PR
+	// client records requests and returns a placeholder URL, so triage
+	// completes and the report stays inspectable in status.agentOutputs.
+	var prClient github.PRClient
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		prClient = github.NewRESTClient(token)
+	} else {
+		setupLog.Info("GITHUB_TOKEN not set; incident PRs will not be opened on GitHub")
+		prClient = &github.FakePRClient{PRURL: "https://example.invalid/hivemind/pr"}
+	}
+
 	// Agents get the uncached API reader: they read once per incident,
 	// which does not justify the cluster-wide informers the cached
 	// client would start (and the watch RBAC they would need).
@@ -233,10 +245,12 @@ func main() {
 	}
 
 	if err := (&controller.IncidentTriageReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		Recorder:   mgr.GetEventRecorder("hivemind"),
-		Dispatcher: dispatcher,
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorder("hivemind"),
+		Dispatcher:  dispatcher,
+		Synthesizer: agents.NewSynthesizerAgent(llmClient),
+		PRClient:    prClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "incidenttriage")
 		os.Exit(1)
