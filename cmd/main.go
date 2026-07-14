@@ -202,9 +202,23 @@ func main() {
 	}
 	llmClient := llm.NewOllamaClient(ollamaModel)
 
-	// Agents get the uncached API reader: they list pods once per
-	// incident, which does not justify the cluster-wide pod informer the
-	// cached client would start (and the watch RBAC it would need).
+	// Fallback when a triage spec carries no prometheusURL; the webhook
+	// stamps the same default into the CRs it creates.
+	prometheusURL := os.Getenv("HIVEMIND_PROMETHEUS_URL")
+	if prometheusURL == "" {
+		prometheusURL = "http://prometheus-operated:9090"
+	}
+
+	// The runbook ConfigMap lives in the operator's own namespace,
+	// injected via the downward API in the Deployment.
+	operatorNamespace := os.Getenv("POD_NAMESPACE")
+	if operatorNamespace == "" {
+		operatorNamespace = "hivemind-system"
+	}
+
+	// Agents get the uncached API reader: they read once per incident,
+	// which does not justify the cluster-wide informers the cached
+	// client would start (and the watch RBAC they would need).
 	dispatcher := &agents.Dispatcher{
 		Agents: []agents.Agent{
 			agents.NewLogTriageAgent(
@@ -212,6 +226,8 @@ func main() {
 				&agents.ClientsetPodLogReader{Clientset: clientset},
 				llmClient,
 			),
+			agents.NewMetricsCorrelatorAgent(prometheusURL, llmClient),
+			agents.NewRunbookLookupAgent(mgr.GetAPIReader(), operatorNamespace),
 		},
 		MaxConcurrent: 4,
 	}
