@@ -1,0 +1,36 @@
+# A deployment the kernel OOM-kills: stress allocates 512M inside a 64Mi
+# memory limit, so the container dies with reason OOMKilled almost
+# immediately. Unlike crashloop.yaml, the fatal signal here is in the
+# container status, not the logs -- a harder case for triage.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hivemind-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaos-oom
+  namespace: hivemind-test
+  labels:
+    app: chaos-oom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chaos-oom
+  template:
+    metadata:
+      labels:
+        app: chaos-oom
+    spec:
+      containers:
+        - name: stress
+          image: polinux/stress
+          command: ["stress"]
+          args: ["--vm", "1", "--vm-bytes", "512M", "--vm-hang", "0"]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 64Mi
