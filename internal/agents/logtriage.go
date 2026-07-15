@@ -52,6 +52,8 @@ const (
 
 const logTriageSystemPrompt = `You are an SRE triaging a Kubernetes production incident.
 Analyze the following pod logs and return JSON only, no prose.
+Identify the LAST error before each crash or restart -- that is the primary signal.
+Do not simply list every error line; earlier errors are context, not the cause.
 JSON schema: {errorLines: string[], likelyCause: string, confidence: float (0-1), recommendedAction: string}`
 
 // LogTriageReport is the JSON shape the LLM is asked to produce. Run
