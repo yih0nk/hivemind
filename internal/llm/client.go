@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // LLMClient is the seam between agents and any LLM provider.
@@ -43,9 +42,14 @@ var _ LLMClient = (*OllamaClient)(nil)
 
 func NewOllamaClient(model string) *OllamaClient {
 	return &OllamaClient{
-		BaseURL:    "http://localhost:11434",
-		Model:      model,
-		HTTPClient: &http.Client{Timeout: 120 * time.Second},
+		BaseURL: "http://localhost:11434",
+		Model:   model,
+		// No client-level Timeout: the per-call context is the single
+		// timeout authority (the dispatcher bounds every agent run).
+		// A fixed Timeout here silently caps whatever the operator was
+		// configured with -- the first call to a large local model can
+		// spend minutes loading it before response headers arrive.
+		HTTPClient: &http.Client{},
 	}
 }
 
