@@ -22,6 +22,7 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -217,6 +218,18 @@ func main() {
 		operatorNamespace = "hivemind-system"
 	}
 
+	// Zero means "use the dispatcher's default"; slow local models
+	// (first Ollama call loads the model from disk) may need more.
+	var agentTimeout time.Duration
+	if raw := os.Getenv("HIVEMIND_AGENT_TIMEOUT_SECONDS"); raw != "" {
+		secs, err := strconv.Atoi(raw)
+		if err != nil || secs <= 0 {
+			setupLog.Error(err, "Invalid HIVEMIND_AGENT_TIMEOUT_SECONDS, using default", "value", raw)
+		} else {
+			agentTimeout = time.Duration(secs) * time.Second
+		}
+	}
+
 	// Without a token the operator still runs end to end: the fake PR
 	// client records requests and returns a placeholder URL, so triage
 	// completes and the report stays inspectable in status.agentOutputs.
@@ -242,15 +255,17 @@ func main() {
 			agents.NewRunbookLookupAgent(mgr.GetAPIReader(), operatorNamespace),
 		},
 		MaxConcurrent: 4,
+		Timeout:       agentTimeout,
 	}
 
 	if err := (&controller.IncidentTriageReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		Recorder:    mgr.GetEventRecorder("hivemind"),
-		Dispatcher:  dispatcher,
-		Synthesizer: agents.NewSynthesizerAgent(llmClient),
-		PRClient:    prClient,
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorder("hivemind"),
+		Dispatcher:   dispatcher,
+		Synthesizer:  agents.NewSynthesizerAgent(llmClient),
+		PRClient:     prClient,
+		AgentTimeout: agentTimeout,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "incidenttriage")
 		os.Exit(1)
