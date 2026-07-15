@@ -77,6 +77,18 @@ func TestSynthesizerAgentRun(t *testing.T) {
 			promptContains: []string{testLogReport},
 		},
 		{
+			// Seen live from llama3.2-vision: recommendedFix as a list of
+			// step objects instead of the requested string. The report
+			// embeds the JSON verbatim, so the shape drift is harmless.
+			name:    "recommendedFix as a structured list is accepted",
+			outputs: fullUpstreamOutputs(),
+			llmResponse: `{"rootCause":"OOM","recommendedFix":[{"step":1,"action":"raise the chaos-crashloop memory limit"}],` +
+				`"confidence":1.0,"severity":"critical","estimatedImpact":"High"}`,
+			wantOutput: `{"rootCause":"OOM","recommendedFix":[{"step":1,"action":"raise the chaos-crashloop memory limit"}],` +
+				`"confidence":1.0,"severity":"critical","estimatedImpact":"High"}`,
+			wantLLMCalled: true,
+		},
+		{
 			name:            "malformed LLM JSON is an error",
 			outputs:         fullUpstreamOutputs(),
 			llmResponse:     "Root cause: probably the deploy.",

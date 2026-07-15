@@ -45,11 +45,14 @@ incident (name the deployment, flag, or limit to change). No generic advice such
 // SynthesisReport is the JSON shape the LLM is asked to produce; Run
 // only uses it to validate that the response parses.
 type SynthesisReport struct {
-	RootCause       string  `json:"rootCause"`
-	RecommendedFix  string  `json:"recommendedFix"`
-	Confidence      float64 `json:"confidence"`
-	Severity        string  `json:"severity"`
-	EstimatedImpact string  `json:"estimatedImpact"`
+	RootCause string `json:"rootCause"`
+	// RecommendedFix is asked for as a string, but local models often
+	// return a structured list of steps instead. The report embeds the
+	// raw JSON verbatim, so any shape renders fine — don't reject it.
+	RecommendedFix  json.RawMessage `json:"recommendedFix"`
+	Confidence      float64         `json:"confidence"`
+	Severity        string          `json:"severity"`
+	EstimatedImpact string          `json:"estimatedImpact"`
 }
 
 // SynthesizerAgent distills the upstream agents' reports into one
