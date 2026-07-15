@@ -90,7 +90,7 @@ func (a *SynthesizerAgent) Run(ctx context.Context, triage *incidentsv1alpha1.In
 		return "", fmt.Errorf("completing synthesis: %w", err)
 	}
 
-	report := stripCodeFence(raw)
+	report := sanitizeLLMJSON(raw)
 	var parsed SynthesisReport
 	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
 		return "", fmt.Errorf("llm returned malformed JSON (%v): %s", err, raw)

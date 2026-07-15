@@ -96,7 +96,7 @@ func (a *LogTriageAgent) Run(ctx context.Context, triage *incidentsv1alpha1.Inci
 		return "", fmt.Errorf("completing log triage: %w", err)
 	}
 
-	report := stripCodeFence(raw)
+	report := sanitizeLLMJSON(raw)
 	var parsed LogTriageReport
 	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
 		return "", fmt.Errorf("llm returned malformed JSON (%v): %s", err, raw)
@@ -139,18 +139,4 @@ func (a *LogTriageAgent) gatherLogs(ctx context.Context, triage *incidentsv1alph
 		return b.String()[:maxContextChars], nil
 	}
 	return b.String(), nil
-}
-
-// stripCodeFence unwraps a ```json ... ``` fence, which chat models often
-// add despite "JSON only" instructions.
-func stripCodeFence(s string) string {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "```") {
-		return s
-	}
-	s = strings.TrimPrefix(s, "```")
-	if i := strings.Index(s, "\n"); i >= 0 {
-		s = s[i+1:] // drop the language tag line
-	}
-	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), "```"))
 }

@@ -113,7 +113,7 @@ func (a *MetricsCorrelatorAgent) Run(ctx context.Context, triage *incidentsv1alp
 		return "", fmt.Errorf("completing metrics correlation: %w", err)
 	}
 
-	report := stripCodeFence(raw)
+	report := sanitizeLLMJSON(raw)
 	var parsed MetricsReport
 	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
 		return "", fmt.Errorf("llm returned malformed JSON (%v): %s", err, raw)
