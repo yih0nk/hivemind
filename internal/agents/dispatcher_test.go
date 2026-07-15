@@ -48,7 +48,7 @@ func (s *stubAgent) Run(ctx context.Context, _ *incidentsv1alpha1.IncidentTriage
 func TestDispatchCollectsAllOutputs(t *testing.T) {
 	d := &Dispatcher{Agents: []Agent{
 		&stubAgent{name: logTriageName, output: "logs look bad"},
-		&stubAgent{name: "metricscorrelator", output: "cpu spiked"},
+		&stubAgent{name: metricsCorrelatorName, output: "cpu spiked"},
 	}}
 
 	outputs, err := d.Dispatch(context.Background(), &incidentsv1alpha1.IncidentTriage{})
@@ -67,20 +67,20 @@ func TestDispatchPartialFailureKeepsSurvivors(t *testing.T) {
 	boom := errors.New("prometheus unreachable")
 	d := &Dispatcher{Agents: []Agent{
 		&stubAgent{name: logTriageName, output: "ok"},
-		&stubAgent{name: "metricscorrelator", err: boom},
+		&stubAgent{name: metricsCorrelatorName, err: boom},
 	}}
 
 	outputs, err := d.Dispatch(context.Background(), &incidentsv1alpha1.IncidentTriage{})
 	if !errors.Is(err, boom) {
 		t.Fatalf("Dispatch() error = %v, want wrapped %v", err, boom)
 	}
-	if !strings.Contains(err.Error(), "metricscorrelator") {
+	if !strings.Contains(err.Error(), metricsCorrelatorName) {
 		t.Errorf("error should name the failing agent, got %q", err)
 	}
 	if outputs[logTriageName] != "ok" {
 		t.Errorf("surviving agent output lost: %v", outputs)
 	}
-	if _, present := outputs["metricscorrelator"]; present {
+	if _, present := outputs[metricsCorrelatorName]; present {
 		t.Errorf("failed agent should have no output entry: %v", outputs)
 	}
 }
@@ -124,7 +124,7 @@ func TestDispatchCancelsAgentsExceedingTimeout(t *testing.T) {
 	d := &Dispatcher{
 		Agents: []Agent{
 			&stubAgent{name: logTriageName, output: "ok"},
-			&stubAgent{name: "metricscorrelator", run: hang},
+			&stubAgent{name: metricsCorrelatorName, run: hang},
 		},
 		Timeout: 20 * time.Millisecond,
 	}
@@ -146,7 +146,7 @@ func TestDispatchCancelsAgentsExceedingTimeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Dispatch() error = %v, want context.DeadlineExceeded", err)
 	}
-	if !strings.Contains(err.Error(), "metricscorrelator") {
+	if !strings.Contains(err.Error(), metricsCorrelatorName) {
 		t.Errorf("error should name the timed-out agent, got %q", err)
 	}
 	if outputs[logTriageName] != "ok" {
