@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,6 +53,11 @@ type IncidentTriageReconciler struct {
 	Synthesizer agents.Agent
 	// PRClient publishes the finished report as a pull request.
 	PRClient github.PRClient
+
+	// AgentTimeout bounds the synthesizer's run, mirroring the bound
+	// the dispatcher applies to the evidence agents. <= 0 means
+	// agents.DefaultAgentTimeout.
+	AgentTimeout time.Duration
 }
 
 // +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;update;patch
@@ -184,7 +190,13 @@ func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage
 
 	// Pass 2: evidence persisted but not yet synthesized.
 	if _, ok := triage.Status.AgentOutputs[r.Synthesizer.Name()]; !ok {
-		report, err := r.Synthesizer.Run(ctx, triage)
+		timeout := r.AgentTimeout
+		if timeout <= 0 {
+			timeout = agents.DefaultAgentTimeout
+		}
+		synthCtx, cancel := context.WithTimeout(ctx, timeout)
+		report, err := r.Synthesizer.Run(synthCtx, triage)
+		cancel()
 		if err != nil {
 			log.Error(err, "synthesis failed", "alert", triage.Spec.AlertName)
 			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
