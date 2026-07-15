@@ -31,14 +31,16 @@ type stubAgent struct {
 	name   string
 	output string
 	err    error
-	run    func(ctx context.Context) // optional hook, called before returning
+	run    func(ctx context.Context) error // optional hook, called before returning
 }
 
 func (s *stubAgent) Name() string { return s.name }
 
 func (s *stubAgent) Run(ctx context.Context, _ *incidentsv1alpha1.IncidentTriage) (string, error) {
 	if s.run != nil {
-		s.run(ctx)
+		if err := s.run(ctx); err != nil {
+			return "", err
+		}
 	}
 	return s.output, s.err
 }
@@ -85,7 +87,7 @@ func TestDispatchPartialFailureKeepsSurvivors(t *testing.T) {
 
 func TestDispatchRespectsConcurrencyLimit(t *testing.T) {
 	var current, peak atomic.Int32
-	track := func(context.Context) {
+	track := func(context.Context) error {
 		now := current.Add(1)
 		for {
 			p := peak.Load()
@@ -95,6 +97,7 @@ func TestDispatchRespectsConcurrencyLimit(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond) // hold the slot so overlap is observable
 		current.Add(-1)
+		return nil
 	}
 
 	agents := make([]Agent, 8)
@@ -108,5 +111,45 @@ func TestDispatchRespectsConcurrencyLimit(t *testing.T) {
 	}
 	if peak.Load() > 2 {
 		t.Errorf("peak concurrency = %d, want <= 2", peak.Load())
+	}
+}
+
+func TestDispatchCancelsAgentsExceedingTimeout(t *testing.T) {
+	// The hung agent blocks until its context is cancelled -- the way a
+	// well-behaved but stalled LLM HTTP call would.
+	hang := func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	d := &Dispatcher{
+		Agents: []Agent{
+			&stubAgent{name: logTriageName, output: "ok"},
+			&stubAgent{name: "metricscorrelator", run: hang},
+		},
+		Timeout: 20 * time.Millisecond,
+	}
+
+	done := make(chan struct{})
+	var outputs map[string]string
+	var err error
+	go func() {
+		outputs, err = d.Dispatch(context.Background(), &incidentsv1alpha1.IncidentTriage{})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Dispatch did not return; timeout not enforced")
+	}
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Dispatch() error = %v, want context.DeadlineExceeded", err)
+	}
+	if !strings.Contains(err.Error(), "metricscorrelator") {
+		t.Errorf("error should name the timed-out agent, got %q", err)
+	}
+	if outputs[logTriageName] != "ok" {
+		t.Errorf("fast agent's output lost: %v", outputs)
 	}
 }
