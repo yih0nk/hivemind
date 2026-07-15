@@ -197,17 +197,19 @@ func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage
 		synthCtx, cancel := context.WithTimeout(ctx, timeout)
 		report, err := r.Synthesizer.Run(synthCtx, triage)
 		cancel()
-		if err != nil {
-			log.Error(err, "synthesis failed", "alert", triage.Spec.AlertName)
+		if err == nil {
 			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-				s.Phase = incidentsv1alpha1.PhaseFailed
-				s.Message = fmt.Sprintf("synthesis failed: %v", err)
+				s.AgentOutputs[r.Synthesizer.Name()] = report
+				s.Message = "synthesis complete; publishing report"
 			})
 		}
-		return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-			s.AgentOutputs[r.Synthesizer.Name()] = report
-			s.Message = "synthesis complete; publishing report"
-		})
+		// A failed synthesis does not fail the run: the evidence is
+		// already gathered and persisted, and a partial report in a PR
+		// beats a complete one that never lands. Fall through and
+		// publish; the missing section renders as "_no output_".
+		log.Error(err, "synthesis failed; publishing partial report", "alert", triage.Spec.AlertName)
+		r.emitEvent(triage, corev1.EventTypeWarning, "SynthesisFailed",
+			fmt.Sprintf("publishing partial report: %v", err))
 	}
 
 	// Pass 3: full report persisted -- publish it (when a repo is

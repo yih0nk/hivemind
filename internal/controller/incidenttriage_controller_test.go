@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -39,12 +40,13 @@ import (
 type stubAgent struct {
 	name   string
 	output string
+	err    error
 }
 
 func (s stubAgent) Name() string { return s.name }
 
 func (s stubAgent) Run(context.Context, *incidentsv1alpha1.IncidentTriage) (string, error) {
-	return s.output, nil
+	return s.output, s.err
 }
 
 var _ = Describe("IncidentTriage Controller", func() {
@@ -133,6 +135,27 @@ var _ = Describe("IncidentTriage Controller", func() {
 			Expect(updated.Status.StartTime).NotTo(BeNil())
 			Expect(updated.Status.CompletionTime).NotTo(BeNil())
 			Expect(updated.Status.Message).To(Equal("triage complete"))
+		})
+
+		It("should publish a partial report when synthesis fails", func() {
+			controllerReconciler.Synthesizer = stubAgent{
+				name: "synthesizer",
+				err:  fmt.Errorf("ollama unreachable"),
+			}
+
+			for range 8 {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			updated := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
+			Expect(updated.Status.AgentOutputs).To(HaveKey("logtriage"))
+			Expect(updated.Status.AgentOutputs).NotTo(HaveKey("synthesizer"))
+			Expect(updated.Status.PRURL).To(Equal("https://github.com/acme/runbooks/pull/1"))
 		})
 	})
 })
