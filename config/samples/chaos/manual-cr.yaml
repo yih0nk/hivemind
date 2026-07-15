@@ -1,0 +1,17 @@
+# Files an IncidentTriage against the chaos-crashloop deployment by hand,
+# skipping the Alertmanager -> webhook path. Apply crashloop.yaml first.
+# prometheusURL assumes the operator runs locally via `make run`; without
+# a Prometheus there, the metrics agent degrades to a soft error report.
+apiVersion: incidents.yihanhong.dev/v1alpha1
+kind: IncidentTriage
+metadata:
+  name: chaos-crashloop-manual
+  namespace: hivemind-test
+spec:
+  alertName: PodCrashLooping
+  severity: critical
+  affectedNamespace: hivemind-test
+  affectedPodSelector:
+    app: chaos-crashloop
+  prometheusURL: http://localhost:9090
+  githubRepo: yih0nk/hivemind
