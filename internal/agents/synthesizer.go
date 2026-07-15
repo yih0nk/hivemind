@@ -38,8 +38,9 @@ var upstreamAgents = []string{logTriageName, metricsCorrelatorName, runbookLooku
 const synthesizerSystemPrompt = `You are an SRE synthesizing an incident report.
 Given the outputs of three triage agents, return JSON only:
 {rootCause: string, recommendedFix: string, confidence: float, severity: string, estimatedImpact: string}
-recommendedFix must be at most 3 concrete steps, each actionable against this specific
-incident (name the deployment, flag, or limit to change). No generic advice such as
+recommendedFix must be a single string, not a list: at most 3 concrete steps numbered
+inside the string ("1. ... 2. ..."), each actionable against this specific incident
+(name the deployment, flag, or limit to change). No generic advice such as
 "check the logs", "monitor the situation", or "investigate further".`
 
 // SynthesisReport is the JSON shape the LLM is asked to produce; Run
