@@ -203,6 +203,12 @@ func main() {
 		ollamaModel = "llama3.2"
 	}
 	llmClient := llm.NewOllamaClient(ollamaModel)
+	// The client defaults to localhost:11434, which only works when the
+	// operator runs on the same host as Ollama; in-cluster deployments
+	// must point this at a Service URL.
+	if url := os.Getenv("HIVEMIND_OLLAMA_URL"); url != "" {
+		llmClient.BaseURL = url
+	}
 
 	// Fallback when a triage spec carries no prometheusURL; the webhook
 	// stamps the same default into the CRs it creates.
