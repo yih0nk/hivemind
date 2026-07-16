@@ -56,10 +56,11 @@ func TestMetricsCorrelatorAgentRun(t *testing.T) {
 		llmResponse string
 		llmErr      error
 
-		wantOutput      string
-		wantSoftError   bool // output is {"error": ...}, LLM never called
-		wantErrContains string
-		promptContains  []string
+		wantOutput         string
+		wantOutputContains []string
+		wantSoftError      bool // output is {"error": ...}, LLM never called
+		wantErrContains    string
+		promptContains     []string
 	}{
 		{
 			name: "metrics fetched and LLM returns valid JSON",
@@ -91,12 +92,16 @@ func TestMetricsCorrelatorAgentRun(t *testing.T) {
 			promptContains: []string{`"cpu":{}`},
 		},
 		{
-			name: "malformed LLM JSON is a hard error",
+			name: "malformed LLM JSON degrades to a soft error report",
 			promHandler: func(w http.ResponseWriter, r *http.Request) {
 				_, _ = fmt.Fprint(w, matrixBody("checkout-1"))
 			},
-			llmResponse:     "The CPU looks fine to me!",
-			wantErrContains: "The CPU looks fine to me!",
+			llmResponse: "The CPU looks fine to me!",
+			wantOutputContains: []string{
+				`"agent":"metricscorrelator"`,
+				`"status":"error"`,
+				"llm returned malformed JSON",
+			},
 		},
 	}
 
@@ -148,8 +153,13 @@ func TestMetricsCorrelatorAgentRun(t *testing.T) {
 				return
 			}
 
-			if out != tt.wantOutput {
+			if tt.wantOutput != "" && out != tt.wantOutput {
 				t.Errorf("Run() = %q, want %q", out, tt.wantOutput)
+			}
+			for _, want := range tt.wantOutputContains {
+				if !strings.Contains(out, want) {
+					t.Errorf("Run() = %q, missing %q", out, want)
+				}
 			}
 			if len(gotQueries) != len(metricQueries) {
 				t.Errorf("prometheus received %d queries, want %d", len(gotQueries), len(metricQueries))
