@@ -1,0 +1,95 @@
+image:
+  repository: ghcr.io/yihanhong/hivemind
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# To use Groq instead of a local Ollama:
+#   ollamaURL: https://api.groq.com/openai/v1
+#   ollamaModel: llama-3.1-70b-versatile
+# OllamaClient speaks the OpenAI-compatible chat API, but it does not yet
+# send an Authorization header, so a hosted provider also needs API-key
+# support wired into internal/llm/client.go (add GROQ_API_KEY as
+# githubToken's sibling in the secret template when that lands).
+ollamaURL: http://ollama:11434
+ollamaModel: llama3.2
+
+prometheusURL: http://prometheus-operated:9090
+agentTimeoutSeconds: 60
+webhookPort: 8080
+
+# Leave empty to run with the fake PR client: triage completes and the
+# report stays in status.agentOutputs, but no GitHub PR is opened.
+githubToken: ""
+# owner/repo the webhook stamps into CRs it creates from alerts.
+githubRepo: ""
+
+# Namespace all operator resources are created in. Kept on uninstall
+# (helm.sh/resource-policy: keep) so CRs and runbooks survive a re-install.
+operatorNamespace: hivemind-system
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Runbooks served to the runbook-lookup agent via the hivemind-runbooks
+# ConfigMap. Each key is a runbook name; the content is matched against
+# alert-name keywords, so mention the terms your alerts use.
+runbooks:
+  OOMKill: |
+    # OOM-Killed Pods
+
+    Diagnosis:
+    - `kubectl describe pod` — look for `OOMKilled` in last state and
+      the container's memory limit.
+    - Compare working-set memory against the limit in the metrics
+      correlator report; a slow climb over hours suggests a leak, a
+      sharp spike suggests a burst workload or bad deploy.
+    - Check whether a recent deploy changed the memory limit or the
+      workload shape (new cache, larger batch size).
+
+    Remediation:
+    - Leak: roll back the offending deploy, then fix upstream.
+    - Legitimate growth: raise the memory limit and request together,
+      keeping limit ~= 1.5x steady-state working set.
+    - Burst: consider a VerticalPodAutoscaler recommendation before
+      hand-tuning.
+  CrashLoopBackOff: |
+    # Crash-Looping Containers
+
+    Diagnosis:
+    - `kubectl logs --previous` for the crash reason; the current logs
+      are usually from a container that has not failed yet.
+    - Exit code 1/2: application error — read the stack trace.
+    - Exit code 137: OOM kill or SIGKILL — see the OOMKill runbook.
+    - Exit code 143: SIGTERM — something is deleting or evicting the pod.
+    - Crash immediately at start with no logs: bad image, missing config
+      (check ConfigMap/Secret mounts), or a failing init container.
+    - Check readiness/liveness probes: an aggressive liveness probe on a
+      slow-starting service looks identical to a crash loop.
+
+    Remediation:
+    - Bad deploy: roll back first, diagnose second.
+    - Probe-induced: raise initialDelaySeconds / failureThreshold.
+  HighErrorRate: |
+    # High HTTP Error Rate
+
+    What it usually means:
+    - A spike in 5xx across many pods points at a shared dependency
+      (database, cache, downstream API) rather than the pods themselves.
+    - Errors confined to one pod usually mean a bad node or a pod stuck
+      in a partial failure — delete the pod and watch whether the rate
+      follows.
+    - Errors starting exactly at a deploy are the deploy until proven
+      otherwise.
+
+    Triage steps:
+    - Correlate the error-rate spike with deploy times and restart
+      counts from the metrics report.
+    - Sample response bodies or logs for the dominant error class:
+      timeouts point downstream, panics point at code.
+    - If a dependency is the cause, check its own alerts and runbooks
+      before touching this service.
