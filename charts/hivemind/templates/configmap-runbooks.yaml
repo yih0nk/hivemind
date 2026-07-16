@@ -1,0 +1,14 @@
+# The runbook-lookup agent reads this ConfigMap from the operator's own
+# namespace (POD_NAMESPACE); the name is its compiled-in default.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hivemind-runbooks
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    app.kubernetes.io/name: hivemind
+data:
+{{- range $name, $content := .Values.runbooks }}
+  {{ $name }}: |
+{{ $content | indent 4 }}
+{{- end }}
