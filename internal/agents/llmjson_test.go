@@ -79,6 +79,54 @@ func TestSanitizeLLMJSON(t *testing.T) {
 	}
 }
 
+func TestFirstJSONValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "single value passes through untouched",
+			in:   `{"a": "b"}`,
+			want: `{"a": "b"}`,
+		},
+		{
+			name: "trailing second value is ignored",
+			in:   "{\"a\": \"b\"}\n```\n\n```json\n{\"c\": \"d\"}",
+			want: `{"a": "b"}`,
+		},
+		{
+			name: "surrounding whitespace is not part of the value",
+			in:   "\n  {\"a\": \"b\"}  \n",
+			want: `{"a": "b"}`,
+		},
+		{
+			name:    "prose is an error",
+			in:      "Sure! The problem is probably DNS.",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := firstJSONValue(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("firstJSONValue(%q) = %q, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("firstJSONValue(%q) unexpected error: %v", tt.in, err)
+			}
+			if got != tt.want {
+				t.Errorf("firstJSONValue(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // The synthesizer output from a live llama3.2-vision run: fenced JSON
 // whose recommendedFix contains real newlines. The sanitized form must
 // unmarshal.

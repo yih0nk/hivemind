@@ -17,9 +17,22 @@ limitations under the License.
 package agents
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+// firstJSONValue extracts the first complete JSON value from s, ignoring
+// whatever follows it. Local models sometimes emit two fenced JSON blocks
+// back-to-back; decoding the whole string would fail on the second one.
+func firstJSONValue(s string) (string, error) {
+	dec := json.NewDecoder(strings.NewReader(s))
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
 
 // sanitizeLLMJSON repairs the JSON local chat models actually emit
 // despite "JSON only" instructions: unwrap a markdown code fence, then

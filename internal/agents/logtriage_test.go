@@ -116,6 +116,13 @@ func TestLogTriageAgentRun(t *testing.T) {
 			wantOutput:  validReport,
 		},
 		{
+			name:        "two fenced JSON blocks keep only the first value",
+			pods:        []client.Object{testPod("checkout-1")},
+			logReader:   &fakeLogReader{},
+			llmResponse: "```json\n" + validReport + "\n```\n\n```json\n{\"errorLines\":[]}\n```",
+			wantOutput:  validReport,
+		},
+		{
 			name: "only the first three pods contribute logs",
 			pods: []client.Object{
 				testPod("checkout-1"), testPod("checkout-2"),

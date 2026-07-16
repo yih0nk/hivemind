@@ -96,9 +96,12 @@ func (a *LogTriageAgent) Run(ctx context.Context, triage *incidentsv1alpha1.Inci
 		return "", fmt.Errorf("completing log triage: %w", err)
 	}
 
-	report := sanitizeLLMJSON(raw)
-	var parsed LogTriageReport
-	if err := json.Unmarshal([]byte(report), &parsed); err != nil {
+	report, err := firstJSONValue(sanitizeLLMJSON(raw))
+	if err == nil {
+		var parsed LogTriageReport
+		err = json.Unmarshal([]byte(report), &parsed)
+	}
+	if err != nil {
 		return "", fmt.Errorf("llm returned malformed JSON (%v): %s", err, raw)
 	}
 	return report, nil
