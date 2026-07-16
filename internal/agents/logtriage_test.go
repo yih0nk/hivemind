@@ -68,10 +68,11 @@ func TestLogTriageAgentRun(t *testing.T) {
 		llmResponse string
 		llmErr      error
 
-		wantOutput      string
-		wantErrContains string
-		promptContains  []string
-		promptExcludes  []string
+		wantOutput         string
+		wantOutputContains []string
+		wantErrContains    string
+		promptContains     []string
+		promptExcludes     []string
 	}{
 		{
 			name:        "pods found and LLM returns valid JSON",
@@ -95,11 +96,15 @@ func TestLogTriageAgentRun(t *testing.T) {
 			},
 		},
 		{
-			name:            "malformed LLM JSON is an error carrying the raw response",
-			pods:            []client.Object{testPod("checkout-1")},
-			logReader:       &fakeLogReader{},
-			llmResponse:     "Sure! The problem is probably DNS.",
-			wantErrContains: "Sure! The problem is probably DNS.",
+			name:        "malformed LLM JSON degrades to a soft error report",
+			pods:        []client.Object{testPod("checkout-1")},
+			logReader:   &fakeLogReader{},
+			llmResponse: "Sure! The problem is probably DNS.",
+			wantOutputContains: []string{
+				`"agent":"logtriage"`,
+				`"status":"error"`,
+				"llm returned malformed JSON",
+			},
 		},
 		{
 			name:            "LLM failure propagates",
@@ -176,8 +181,13 @@ func TestLogTriageAgentRun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Run() unexpected error: %v", err)
 			}
-			if out != tt.wantOutput {
+			if tt.wantOutput != "" && out != tt.wantOutput {
 				t.Errorf("Run() = %q, want %q", out, tt.wantOutput)
+			}
+			for _, want := range tt.wantOutputContains {
+				if !strings.Contains(out, want) {
+					t.Errorf("Run() = %q, missing %q", out, want)
+				}
 			}
 
 			calls := fakeLLM.Calls()
