@@ -1,0 +1,10 @@
+# Kept on uninstall so IncidentTriage CRs and runbooks in it survive a
+# chart re-install.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.operatorNamespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    app.kubernetes.io/name: hivemind
