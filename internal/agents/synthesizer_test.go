@@ -43,10 +43,11 @@ func TestSynthesizerAgentRun(t *testing.T) {
 		outputs     map[string]string
 		llmResponse string
 
-		wantOutput      string
-		wantErrContains string
-		wantLLMCalled   bool
-		promptContains  []string
+		wantOutput         string
+		wantOutputContains []string
+		wantErrContains    string
+		wantLLMCalled      bool
+		promptContains     []string
 	}{
 		{
 			name:          "all upstream outputs present",
@@ -89,11 +90,15 @@ func TestSynthesizerAgentRun(t *testing.T) {
 			wantLLMCalled: true,
 		},
 		{
-			name:            "malformed LLM JSON is an error",
-			outputs:         fullUpstreamOutputs(),
-			llmResponse:     "Root cause: probably the deploy.",
-			wantErrContains: "Root cause: probably the deploy.",
-			wantLLMCalled:   true,
+			name:        "malformed LLM JSON degrades to a soft error report",
+			outputs:     fullUpstreamOutputs(),
+			llmResponse: "Root cause: probably the deploy.",
+			wantOutputContains: []string{
+				`"agent":"synthesizer"`,
+				`"status":"error"`,
+				"llm returned malformed JSON",
+			},
+			wantLLMCalled: true,
 		},
 	}
 
@@ -128,8 +133,13 @@ func TestSynthesizerAgentRun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Run() unexpected error: %v", err)
 			}
-			if out != tt.wantOutput {
+			if tt.wantOutput != "" && out != tt.wantOutput {
 				t.Errorf("Run() = %q, want %q", out, tt.wantOutput)
+			}
+			for _, want := range tt.wantOutputContains {
+				if !strings.Contains(out, want) {
+					t.Errorf("Run() = %q, missing %q", out, want)
+				}
 			}
 
 			calls := fakeLLM.Calls()
