@@ -1,0 +1,17 @@
+# Alertmanager webhook entry point: from inside the cluster,
+# http://hivemind.<operatorNamespace>:8080/webhook.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hivemind
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    app.kubernetes.io/name: hivemind
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hivemind
+  ports:
+    - name: webhook
+      port: {{ .Values.webhookPort }}
+      targetPort: webhook
