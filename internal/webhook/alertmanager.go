@@ -99,6 +99,10 @@ type AlertmanagerHandler struct {
 
 var _ http.Handler = (*AlertmanagerHandler)(nil)
 
+// The handler creates IncidentTriage CRs from incoming alerts; the
+// reconciler's markers only cover reading and updating them.
+// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=create
+
 // NewAlertmanagerHandler builds a handler configured from the environment:
 // HIVEMIND_GITHUB_REPO and HIVEMIND_PROMETHEUS_URL.
 func NewAlertmanagerHandler(c client.Client) *AlertmanagerHandler {
