@@ -39,7 +39,7 @@ Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and
 1. Clone and install the CRD:
 
    ```sh
-   git clone https://github.com/yihanhong/hivemind.git && cd hivemind
+   git clone https://github.com/yih0nk/hivemind.git && cd hivemind
    kind create cluster --name hivemind
    make install
    ```
@@ -63,7 +63,7 @@ Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and
    HIVEMIND_OLLAMA_URL=https://api.groq.com/openai/v1 \
    HIVEMIND_OLLAMA_MODEL=llama-3.1-70b-versatile \
    HIVEMIND_AGENT_TIMEOUT_SECONDS=30 make run
-   # Note: Groq API key support not yet wired — see issue #1
+   # Note: Groq API key support not yet wired — see known limitations
    ```
 
 4. Simulate an incident (or run `hack/simulate-incident.sh` to do all of this in one step):
@@ -120,7 +120,7 @@ All configuration is via environment variables:
 
 ## Known limitations
 
-- Groq (and any API-key-gated provider) not yet supported — `OllamaClient` sends no `Authorization` header. Tracked in issue #1.
+- Groq (and any API-key-gated provider) not yet supported — `OllamaClient` sends no `Authorization` header. API key support not yet wired — contributions welcome.
 - Ollama must be reachable from the operator pod; `localhost:11434` works for `make run` but not in-cluster unless Ollama is deployed as a Service.
 - A dead Ollama sets `phase=Failed` (by design — triage without an LLM is not useful).
 
