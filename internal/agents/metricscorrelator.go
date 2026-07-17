@@ -113,25 +113,7 @@ func (a *MetricsCorrelatorAgent) Run(ctx context.Context, triage *incidentsv1alp
 		return "", fmt.Errorf("completing metrics correlation: %w", err)
 	}
 
-	report, err := firstJSONValue(sanitizeLLMJSON(raw))
-	if err == nil {
-		var parsed MetricsReport
-		err = json.Unmarshal([]byte(report), &parsed)
-	}
-	if err != nil {
-		// Malformed LLM output must not sink the whole triage run: report
-		// it as this agent's finding so siblings' outputs still land.
-		soft, mErr := json.Marshal(map[string]string{
-			"agent":   metricsCorrelatorName,
-			"status":  "error",
-			"summary": fmt.Sprintf("llm returned malformed JSON: %v", err),
-		})
-		if mErr != nil {
-			return "", fmt.Errorf("marshaling soft error: %w", mErr)
-		}
-		return string(soft), nil
-	}
-	return report, nil
+	return decodeReport[MetricsReport](raw, metricsCorrelatorName)
 }
 
 // gatherMetrics runs every query and packs the results into one compact

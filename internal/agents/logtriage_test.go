@@ -96,14 +96,14 @@ func TestLogTriageAgentRun(t *testing.T) {
 			},
 		},
 		{
-			name:        "malformed LLM JSON degrades to a soft error report",
+			name:        softErrorCaseName,
 			pods:        []client.Object{testPod("checkout-1")},
 			logReader:   &fakeLogReader{},
 			llmResponse: "Sure! The problem is probably DNS.",
 			wantOutputContains: []string{
 				`"agent":"logtriage"`,
-				`"status":"error"`,
-				"llm returned malformed JSON",
+				wantSoftErrorStatus,
+				wantSoftErrorSummary,
 			},
 		},
 		{

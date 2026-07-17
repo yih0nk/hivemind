@@ -22,6 +22,31 @@ import (
 	"strings"
 )
 
+// decodeReport extracts the first JSON value from a raw LLM response and
+// checks that it parses as T; the raw JSON string (not the parsed struct)
+// is what lands in status.agentOutputs. Malformed output must not sink
+// the whole triage run, so it degrades to a soft error report attributed
+// to agentName and siblings' outputs still land.
+func decodeReport[T any](raw, agentName string) (string, error) {
+	report, err := firstJSONValue(sanitizeLLMJSON(raw))
+	if err == nil {
+		var parsed T
+		err = json.Unmarshal([]byte(report), &parsed)
+	}
+	if err != nil {
+		soft, mErr := json.Marshal(map[string]string{
+			"agent":   agentName,
+			"status":  "error",
+			"summary": fmt.Sprintf("llm returned malformed JSON: %v", err),
+		})
+		if mErr != nil {
+			return "", fmt.Errorf("marshaling soft error: %w", mErr)
+		}
+		return string(soft), nil
+	}
+	return report, nil
+}
+
 // firstJSONValue extracts the first complete JSON value from s, ignoring
 // whatever follows it. Local models sometimes emit two fenced JSON blocks
 // back-to-back; decoding the whole string would fail on the second one.

@@ -92,15 +92,15 @@ func TestMetricsCorrelatorAgentRun(t *testing.T) {
 			promptContains: []string{`"cpu":{}`},
 		},
 		{
-			name: "malformed LLM JSON degrades to a soft error report",
+			name: softErrorCaseName,
 			promHandler: func(w http.ResponseWriter, r *http.Request) {
 				_, _ = fmt.Fprint(w, matrixBody("checkout-1"))
 			},
 			llmResponse: "The CPU looks fine to me!",
 			wantOutputContains: []string{
 				`"agent":"metricscorrelator"`,
-				`"status":"error"`,
-				"llm returned malformed JSON",
+				wantSoftErrorStatus,
+				wantSoftErrorSummary,
 			},
 		},
 	}

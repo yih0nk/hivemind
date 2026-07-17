@@ -94,23 +94,5 @@ func (a *SynthesizerAgent) Run(ctx context.Context, triage *incidentsv1alpha1.In
 		return "", fmt.Errorf("completing synthesis: %w", err)
 	}
 
-	report, err := firstJSONValue(sanitizeLLMJSON(raw))
-	if err == nil {
-		var parsed SynthesisReport
-		err = json.Unmarshal([]byte(report), &parsed)
-	}
-	if err != nil {
-		// Malformed LLM output must not fail the run: degrade to this
-		// agent's error report so the upstream evidence still publishes.
-		soft, mErr := json.Marshal(map[string]string{
-			"agent":   synthesizerName,
-			"status":  "error",
-			"summary": fmt.Sprintf("llm returned malformed JSON: %v", err),
-		})
-		if mErr != nil {
-			return "", fmt.Errorf("marshaling soft error: %w", mErr)
-		}
-		return string(soft), nil
-	}
-	return report, nil
+	return decodeReport[SynthesisReport](raw, synthesizerName)
 }

@@ -18,7 +18,6 @@ package agents
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -96,25 +95,7 @@ func (a *LogTriageAgent) Run(ctx context.Context, triage *incidentsv1alpha1.Inci
 		return "", fmt.Errorf("completing log triage: %w", err)
 	}
 
-	report, err := firstJSONValue(sanitizeLLMJSON(raw))
-	if err == nil {
-		var parsed LogTriageReport
-		err = json.Unmarshal([]byte(report), &parsed)
-	}
-	if err != nil {
-		// Malformed LLM output must not sink the whole triage run: report
-		// it as this agent's finding so siblings' outputs still land.
-		soft, mErr := json.Marshal(map[string]string{
-			"agent":   logTriageName,
-			"status":  "error",
-			"summary": fmt.Sprintf("llm returned malformed JSON: %v", err),
-		})
-		if mErr != nil {
-			return "", fmt.Errorf("marshaling soft error: %w", mErr)
-		}
-		return string(soft), nil
-	}
-	return report, nil
+	return decodeReport[LogTriageReport](raw, logTriageName)
 }
 
 // gatherLogs lists the affected pods and concatenates their recent logs

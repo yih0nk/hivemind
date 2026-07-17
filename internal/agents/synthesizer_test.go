@@ -90,13 +90,13 @@ func TestSynthesizerAgentRun(t *testing.T) {
 			wantLLMCalled: true,
 		},
 		{
-			name:        "malformed LLM JSON degrades to a soft error report",
+			name:        softErrorCaseName,
 			outputs:     fullUpstreamOutputs(),
 			llmResponse: "Root cause: probably the deploy.",
 			wantOutputContains: []string{
 				`"agent":"synthesizer"`,
-				`"status":"error"`,
-				"llm returned malformed JSON",
+				wantSoftErrorStatus,
+				wantSoftErrorSummary,
 			},
 			wantLLMCalled: true,
 		},

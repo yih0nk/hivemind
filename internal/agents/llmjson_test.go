@@ -21,6 +21,18 @@ import (
 	"testing"
 )
 
+// Shared expectations for the soft error report decodeReport emits when
+// an LLM response is malformed; every agent's test exercises this path.
+const (
+	softErrorCaseName    = "malformed LLM JSON degrades to a soft error report"
+	wantSoftErrorStatus  = `"status":"error"`
+	wantSoftErrorSummary = "llm returned malformed JSON"
+)
+
+// tinyJSON is a minimal valid JSON value reused across sanitize and
+// extraction cases.
+const tinyJSON = `{"a": "b"}`
+
 func TestSanitizeLLMJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -35,7 +47,7 @@ func TestSanitizeLLMJSON(t *testing.T) {
 		{
 			name: "code fence is unwrapped",
 			in:   "```json\n{\"a\": \"b\"}\n```",
-			want: `{"a": "b"}`,
+			want: tinyJSON,
 		},
 		{
 			name: "raw newline inside a string is escaped",
@@ -88,18 +100,18 @@ func TestFirstJSONValue(t *testing.T) {
 	}{
 		{
 			name: "single value passes through untouched",
-			in:   `{"a": "b"}`,
-			want: `{"a": "b"}`,
+			in:   tinyJSON,
+			want: tinyJSON,
 		},
 		{
 			name: "trailing second value is ignored",
 			in:   "{\"a\": \"b\"}\n```\n\n```json\n{\"c\": \"d\"}",
-			want: `{"a": "b"}`,
+			want: tinyJSON,
 		},
 		{
 			name: "surrounding whitespace is not part of the value",
 			in:   "\n  {\"a\": \"b\"}  \n",
-			want: `{"a": "b"}`,
+			want: tinyJSON,
 		},
 		{
 			name:    "prose is an error",
