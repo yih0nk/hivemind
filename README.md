@@ -1,135 +1,129 @@
-# hivemind
-// TODO(user): Add simple overview of use/purpose
+# Hivemind
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that turns a firing Prometheus alert into a GitHub pull request containing an LLM-generated root-cause report — logs, metrics, and runbook guidance triaged by a swarm of agents before a human ever opens a terminal.
 
-## Getting Started
+## How it works
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+A Prometheus alert fires and Alertmanager POSTs it to the operator's webhook receiver, which creates an `IncidentTriage` custom resource in the alert's namespace. The reconciler drives that CR through a phase machine, fanning out three evidence agents concurrently with an `errgroup`: one fetches pod logs, one queries Prometheus for resource trends, one matches the alert against a ConfigMap of runbooks. A synthesizer agent then combines their outputs into a root-cause summary and recommended fix, and the operator opens a GitHub PR with the full report. All LLM calls go through any OpenAI-compatible backend — a local Ollama by default, or a hosted provider like Groq.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+Built in Go with kubebuilder v4.
 
-```sh
-make docker-build docker-push IMG=<some-registry>/hivemind:tag
+## Architecture
+
+```
+Prometheus ──alert──▶ Alertmanager ──POST /webhook──▶ ┌──────────────────────┐
+                                                      │  Hivemind Operator   │
+                                                      │  webhook receiver    │
+                                                      │   └▶ IncidentTriage  │
+                                                      │  reconciler          │
+                                                      │  dispatcher          │
+                                                      └──────────┬───────────┘
+                                               fan out (errgroup)│
+                               ┌──────────────────┬──────────────┤
+                               ▼                  ▼              ▼
+                          logtriage       metricscorrelator  runbooklookup
+                          (pod logs)        (Prometheus)      (ConfigMap)
+                               │                  │              │
+                               └────────┬─────────┴──────────────┘
+                                        ▼
+                                   synthesizer ◀───▶ Ollama / Groq (LLM)
+                                        │
+                                        ▼
+                             GitHub PR: root-cause report
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+## Quickstart
 
-**Install the CRDs into the cluster:**
+Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and [Ollama](https://ollama.com/) with the `llama3.2` model pulled.
 
-```sh
-make install
-```
+1. Clone and install the CRD:
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+   ```sh
+   git clone https://github.com/yihanhong/hivemind.git && cd hivemind
+   kind create cluster --name hivemind
+   make install
+   ```
 
-```sh
-make deploy IMG=<some-registry>/hivemind:tag
-```
+2. Apply the runbooks:
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+   ```sh
+   kubectl create namespace hivemind-system
+   kubectl apply -n hivemind-system -f config/samples/runbooks.yaml
+   ```
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+3. Run the operator locally:
 
-```sh
-kubectl apply -k config/samples/
-```
+   ```sh
+   HIVEMIND_AGENT_TIMEOUT_SECONDS=120 make run
+   ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+   Or against Groq instead of local Ollama:
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+   ```sh
+   HIVEMIND_OLLAMA_URL=https://api.groq.com/openai/v1 \
+   HIVEMIND_OLLAMA_MODEL=llama-3.1-70b-versatile \
+   HIVEMIND_AGENT_TIMEOUT_SECONDS=30 make run
+   # Note: Groq API key support not yet wired — see issue #1
+   ```
 
-```sh
-kubectl delete -k config/samples/
-```
+4. Simulate an incident (or run `hack/simulate-incident.sh` to do all of this in one step):
 
-**Delete the APIs(CRDs) from the cluster:**
+   ```sh
+   kubectl apply -f config/samples/chaos/crashloop.yaml
+   kubectl apply -f config/samples/chaos/manual-cr.yaml
+   kubectl get incidenttriages -n hivemind-test -w
+   ```
 
-```sh
-make uninstall
-```
+5. Read the output:
 
-**UnDeploy the controller from the cluster:**
+   ```sh
+   kubectl get incidenttriage chaos-crashloop-manual \
+     -n hivemind-test -o yaml
+   ```
 
-```sh
-make undeploy
-```
+   The full agent reports live in `status.agentOutputs`; the PR URL (when a GitHub token is configured) in `status.prURL`.
 
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
+## Deploy to a cluster (Helm)
 
 ```sh
-make build-installer IMG=<some-registry>/hivemind:tag
+helm upgrade --install hivemind ./charts/hivemind \
+  --set ollamaURL=http://<your-ollama-svc>:11434 \
+  --set githubToken=<token> \
+  --set githubRepo=owner/repo
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
+Then point Alertmanager at `http://hivemind.<namespace>:8080/webhook` — every firing alert routed there becomes an `IncidentTriage` CR. See [config/samples/alertmanager-webhook-config.yaml](config/samples/alertmanager-webhook-config.yaml) for a ready-made receiver snippet (usable directly as a kube-prometheus-stack values overlay).
 
-2. Using the installer
+## Agents
 
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+| Agent | What it does |
+|---|---|
+| logtriage | Fetches pod logs, LLM identifies error lines and likely cause |
+| metricscorrelator | Queries Prometheus for CPU/memory/restarts, LLM summarizes trends |
+| runbooklookup | Keyword-matches alert name against a ConfigMap of runbooks |
+| synthesizer | Combines all three into a root-cause summary and recommended fix |
 
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/hivemind/<tag or branch>/dist/install.yaml
-```
+## Configuration
 
-### By providing a Helm Chart
+All configuration is via environment variables:
 
-1. Build the chart using the optional helm plugin
+| Variable | Default | Purpose |
+|---|---|---|
+| `HIVEMIND_OLLAMA_URL` | `http://localhost:11434` | Base URL of the OpenAI-compatible LLM API |
+| `HIVEMIND_OLLAMA_MODEL` | `llama3.2` | Model name sent to the LLM backend |
+| `HIVEMIND_PROMETHEUS_URL` | `http://prometheus-operated:9090` | Prometheus queried by the metrics agent; also stamped into CRs created by the webhook |
+| `HIVEMIND_AGENT_TIMEOUT_SECONDS` | `30` | Per-agent timeout; raise for slow local models (first call loads the model from disk) |
+| `HIVEMIND_WEBHOOK_PORT` | `8080` | Port for the Alertmanager webhook server |
+| `HIVEMIND_GITHUB_REPO` | *(empty)* | `owner/repo` the webhook stamps into CRs it creates from alerts |
+| `GITHUB_TOKEN` | *(empty)* | Token for opening PRs; when unset, triage still completes but no PR is opened |
+| `POD_NAMESPACE` | `hivemind-system` | Namespace holding the runbooks ConfigMap (injected via the downward API in-cluster) |
 
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
+## Known limitations
 
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+- Groq (and any API-key-gated provider) not yet supported — `OllamaClient` sends no `Authorization` header. Tracked in issue #1.
+- Ollama must be reachable from the operator pod; `localhost:11434` works for `make run` but not in-cluster unless Ollama is deployed as a Service.
+- A dead Ollama sets `phase=Failed` (by design — triage without an LLM is not useful).
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+MIT
