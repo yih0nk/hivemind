@@ -6,12 +6,12 @@ image:
 # To use Groq instead of a local Ollama:
 #   ollamaURL: https://api.groq.com/openai/v1
 #   ollamaModel: llama-3.1-70b-versatile
-# OllamaClient speaks the OpenAI-compatible chat API, but it does not yet
-# send an Authorization header, so a hosted provider also needs API-key
-# support wired into internal/llm/client.go (add GROQ_API_KEY as
-# githubToken's sibling in the secret template when that lands).
+#   llmApiKey: <your-groq-key>
 ollamaURL: http://ollama:11434
 ollamaModel: llama3.2
+# Sent as a Bearer token to the LLM API. Required by key-gated hosted
+# providers (Groq, OpenAI); leave empty for a local Ollama.
+llmApiKey: ""
 
 prometheusURL: http://prometheus-operated:9090
 agentTimeoutSeconds: 60
