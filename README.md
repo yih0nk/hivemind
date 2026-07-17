@@ -62,8 +62,8 @@ Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and
    ```sh
    HIVEMIND_OLLAMA_URL=https://api.groq.com/openai/v1 \
    HIVEMIND_OLLAMA_MODEL=llama-3.1-70b-versatile \
+   HIVEMIND_LLM_API_KEY=<your-groq-key> \
    HIVEMIND_AGENT_TIMEOUT_SECONDS=30 make run
-   # Note: Groq API key support not yet wired — see known limitations
    ```
 
 4. Simulate an incident (or run `hack/simulate-incident.sh` to do all of this in one step):
@@ -112,6 +112,7 @@ All configuration is via environment variables:
 | `HIVEMIND_OLLAMA_URL` | `http://localhost:11434` | Base URL of the OpenAI-compatible LLM API |
 | `HIVEMIND_OLLAMA_MODEL` | `llama3.2` | Model name sent to the LLM backend |
 | `HIVEMIND_PROMETHEUS_URL` | `http://prometheus-operated:9090` | Prometheus queried by the metrics agent; also stamped into CRs created by the webhook |
+| `HIVEMIND_LLM_API_KEY` | *(empty)* | Bearer token for key-gated providers like Groq; not needed for local Ollama (Helm value: `llmApiKey`) |
 | `HIVEMIND_AGENT_TIMEOUT_SECONDS` | `30` | Per-agent timeout; raise for slow local models (first call loads the model from disk) |
 | `HIVEMIND_WEBHOOK_PORT` | `8080` | Port for the Alertmanager webhook server |
 | `HIVEMIND_GITHUB_REPO` | *(empty)* | `owner/repo` the webhook stamps into CRs it creates from alerts |
@@ -120,7 +121,6 @@ All configuration is via environment variables:
 
 ## Known limitations
 
-- Groq (and any API-key-gated provider) not yet supported — `OllamaClient` sends no `Authorization` header. API key support not yet wired — contributions welcome.
 - Ollama must be reachable from the operator pod; `localhost:11434` works for `make run` but not in-cluster unless Ollama is deployed as a Service.
 - A dead Ollama sets `phase=Failed` (by design — triage without an LLM is not useful).
 
