@@ -209,6 +209,10 @@ func main() {
 	if url := os.Getenv("HIVEMIND_OLLAMA_URL"); url != "" {
 		llmClient.BaseURL = url
 	}
+	// Required by key-gated providers (Groq); a local Ollama needs none.
+	if apiKey := os.Getenv("HIVEMIND_LLM_API_KEY"); apiKey != "" {
+		llmClient.APIKey = apiKey
+	}
 
 	// Fallback when a triage spec carries no prometheusURL; the webhook
 	// stamps the same default into the CRs it creates.

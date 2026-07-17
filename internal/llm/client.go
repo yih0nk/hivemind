@@ -33,8 +33,12 @@ type LLMClient interface {
 
 // OllamaClient talks to a local Ollama server via its OpenAI-compatible API.
 type OllamaClient struct {
-	BaseURL    string
-	Model      string
+	BaseURL string
+	Model   string
+	// APIKey, when set, is sent as a Bearer token so key-gated
+	// OpenAI-compatible providers (Groq, OpenAI) work; a local Ollama
+	// needs none and ignores the header.
+	APIKey     string
 	HTTPClient *http.Client
 }
 
@@ -69,8 +73,6 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-// TODO(issue#1): add Authorization: Bearer header when an API key is configured
-// so Groq and other key-gated OpenAI-compatible providers work out of the box.
 func (c *OllamaClient) Complete(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	body, err := json.Marshal(chatRequest{
 		Model: c.Model,
@@ -88,6 +90,9 @@ func (c *OllamaClient) Complete(ctx context.Context, systemPrompt, userPrompt st
 		return "", fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
