@@ -15,10 +15,10 @@
 # sections below into your alertmanager.yml instead.
 #
 # Prerequisites:
-#   - A Service named `hivemind-webhook` exposing port 8080 of the
+#   - A Service named `hivemind` exposing port 8080 of the
 #     operator pod. If Alertmanager runs in a different namespace, use
 #     the fully qualified URL instead, e.g.
-#     http://hivemind-webhook.hivemind-system.svc.cluster.local:8080/webhook
+#     http://hivemind.hivemind-system.svc.cluster.local:8080/webhook
 #   - HIVEMIND_GITHUB_REPO (and optionally HIVEMIND_PROMETHEUS_URL) set
 #     on the operator Deployment, so created CRs carry a githubRepo.
 #
@@ -39,6 +39,6 @@ alertmanager:
     receivers:
       - name: hivemind
         webhook_configs:
-          - url: http://hivemind-webhook:8080/webhook
+          - url: http://hivemind:8080/webhook
             # Hivemind ignores resolved alerts; don't bother sending them.
             send_resolved: false
