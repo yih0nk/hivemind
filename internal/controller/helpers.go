@@ -21,7 +21,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 )
 
 // patchStatus applies mutate to triage's status, then patches only the

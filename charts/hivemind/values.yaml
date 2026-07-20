@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/yihanhong/hivemind
+  repository: ghcr.io/yih0nk/hivemind
   tag: latest
   pullPolicy: IfNotPresent
 

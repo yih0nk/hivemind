@@ -1,4 +1,4 @@
-module github.com/yihanhong/hivemind
+module github.com/yih0nk/hivemind
 
 go 1.26.0
 

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: incidenttriages.incidents.yihanhong.dev
+  name: incidenttriages.incidents.yih0nk.github.io
 spec:
-  group: incidents.yihanhong.dev
+  group: incidents.yih0nk.github.io
   names:
     kind: IncidentTriage
     listKind: IncidentTriageList

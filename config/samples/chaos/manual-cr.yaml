@@ -2,7 +2,7 @@
 # skipping the Alertmanager -> webhook path. Apply crashloop.yaml first.
 # prometheusURL assumes the operator runs locally via `make run`; without
 # a Prometheus there, the metrics agent degrades to a soft error report.
-apiVersion: incidents.yihanhong.dev/v1alpha1
+apiVersion: incidents.yih0nk.github.io/v1alpha1
 kind: IncidentTriage
 metadata:
   name: chaos-crashloop-manual

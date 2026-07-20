@@ -29,9 +29,9 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
-	"github.com/yihanhong/hivemind/internal/agents"
-	"github.com/yihanhong/hivemind/internal/github"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
+	"github.com/yih0nk/hivemind/internal/agents"
+	"github.com/yih0nk/hivemind/internal/github"
 )
 
 // stubAgent stands in for real agents: the controller suite verifies the

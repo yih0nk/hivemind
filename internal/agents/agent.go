@@ -21,7 +21,7 @@ package agents
 import (
 	"context"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 )
 
 // Agent is one triage specialist (log-triage, metrics-correlator,

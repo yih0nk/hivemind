@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

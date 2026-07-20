@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 )
 
 // NextPhase encodes the triage state machine:

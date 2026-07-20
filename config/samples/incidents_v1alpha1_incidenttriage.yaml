@@ -1,4 +1,4 @@
-apiVersion: incidents.yihanhong.dev/v1alpha1
+apiVersion: incidents.yih0nk.github.io/v1alpha1
 kind: IncidentTriage
 metadata:
   labels:

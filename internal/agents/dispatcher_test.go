@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 )
 
 type stubAgent struct {

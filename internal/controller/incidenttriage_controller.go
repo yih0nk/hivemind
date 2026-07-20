@@ -30,9 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
-	"github.com/yihanhong/hivemind/internal/agents"
-	"github.com/yihanhong/hivemind/internal/github"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
+	"github.com/yih0nk/hivemind/internal/agents"
+	"github.com/yih0nk/hivemind/internal/github"
 )
 
 // cleanupFinalizer blocks deletion until the operator has released any
@@ -60,9 +60,9 @@ type IncidentTriageReconciler struct {
 	AgentTimeout time.Duration
 }
 
-// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=incidents.yihanhong.dev,resources=incidenttriages/finalizers,verbs=update
+// +kubebuilder:rbac:groups=incidents.yih0nk.github.io,resources=incidenttriages,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=incidents.yih0nk.github.io,resources=incidenttriages/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=incidents.yih0nk.github.io,resources=incidenttriages/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods;configmaps,verbs=get;list
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;create;patch

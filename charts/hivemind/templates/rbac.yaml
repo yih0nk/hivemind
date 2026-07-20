@@ -7,13 +7,13 @@ metadata:
   labels:
     app.kubernetes.io/name: hivemind
 rules:
-  - apiGroups: [incidents.yihanhong.dev]
+  - apiGroups: [incidents.yih0nk.github.io]
     resources: [incidenttriages]
     verbs: [create, get, list, watch, update, patch]
-  - apiGroups: [incidents.yihanhong.dev]
+  - apiGroups: [incidents.yih0nk.github.io]
     resources: [incidenttriages/status]
     verbs: [get, update, patch]
-  - apiGroups: [incidents.yihanhong.dev]
+  - apiGroups: [incidents.yih0nk.github.io]
     resources: [incidenttriages/finalizers]
     verbs: [update]
   - apiGroups: [""]

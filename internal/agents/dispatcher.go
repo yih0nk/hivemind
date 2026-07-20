@@ -25,7 +25,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 )
 
 // DefaultAgentTimeout bounds a single agent's Run when no explicit

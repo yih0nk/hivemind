@@ -29,8 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	incidentsv1alpha1 "github.com/yihanhong/hivemind/api/v1alpha1"
-	"github.com/yihanhong/hivemind/internal/llm"
+	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
+	"github.com/yih0nk/hivemind/internal/llm"
 )
 
 const (

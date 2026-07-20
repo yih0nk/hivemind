@@ -3,19 +3,19 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.15.0
-domain: yihanhong.dev
+domain: yih0nk.github.io
 layout:
 - go.kubebuilder.io/v4
 projectName: hivemind
-repo: github.com/yihanhong/hivemind
+repo: github.com/yih0nk/hivemind
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: yihanhong.dev
+  domain: yih0nk.github.io
   group: incidents
   kind: IncidentTriage
-  path: github.com/yihanhong/hivemind/api/v1alpha1
+  path: github.com/yih0nk/hivemind/api/v1alpha1
   version: v1alpha1
 version: "3"
