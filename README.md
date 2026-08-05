@@ -32,6 +32,20 @@ Prometheus ──alert──▶ Alertmanager ──POST /webhook──▶ ┌─
                              GitHub PR: root-cause report
 ```
 
+## Reasoning service (experimental)
+
+The operator's synthesizer is a single LLM pass over a fixed fan-out. The
+[`brain/`](brain/) service explores a more capable successor: a
+[LangGraph](https://langchain-ai.github.io/langgraph/) reasoning layer that
+synthesizes a root-cause hypothesis, **critiques its own confidence, and loops
+to re-examine the evidence** until it is confident or hits an iteration cap —
+a cyclic graph the operator's `errgroup` DAG can't express.
+
+It runs and serves over HTTP today (Groq-backed, with a deterministic mock
+fallback for offline tests) but is **not yet wired into the operator**. The next
+step is a `Reasoner` seam so the Triaging phase POSTs to the brain instead of
+running the in-process dispatcher. See [`brain/README.md`](brain/README.md).
+
 ## Quickstart
 
 Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and [Ollama](https://ollama.com/) with the `llama3.2` model pulled.
