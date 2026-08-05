@@ -1,0 +1,79 @@
+# Hivemind Brain
+
+A [LangGraph](https://langchain-ai.github.io/langgraph/) reasoning service for
+Hivemind incident triage.
+
+The Go operator owns the Kubernetes control plane — it watches `IncidentTriage`
+CRs, gathers raw evidence (pod logs, Prometheus trends, runbooks), and opens
+remediation PRs. This service owns the **reasoning**: a *cyclic* graph that
+synthesizes a root-cause hypothesis, critiques its own confidence, and loops to
+re-examine the evidence until it is confident or hits an iteration cap.
+
+That self-correcting loop is the reason this layer is a LangGraph `StateGraph`
+rather than the operator's `errgroup` fan-out — a fixed DAG can't express the
+`critique → gather` back-edge.
+
+## The graph
+
+```
+START → gather → synthesize → critique → ┐
+          ▲                               │ route_after_critique
+          └──────────── loop ─────────────┤   (confidence < threshold
+                                          │    and iterations left?)
+                                          └── done → finalize → END
+```
+
+| Node         | Role                                                              |
+|--------------|-------------------------------------------------------------------|
+| `gather`     | Summarize raw signals per source; re-focus on the critic's guidance on a reloop |
+| `synthesize` | Combine the evidence into one root-cause hypothesis + proposed fix |
+| `critique`   | Score confidence (0–1) and emit guidance for another pass          |
+| `finalize`   | Assemble the report returned to the caller                         |
+
+The state schema, reducers, and edges live in
+[`hivemind_brain/`](hivemind_brain/).
+
+## Run it
+
+```sh
+cd brain
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env   # add your GROQ_API_KEY, or leave provider on the mock
+python -m hivemind_brain.server   # serves on :8090
+```
+
+Then:
+
+```sh
+curl -s localhost:8090/healthz
+curl -s localhost:8090/triage -H 'content-type: application/json' -d '{
+  "alert": "OOMKilled", "namespace": "prod", "pod": "checkout-7d9",
+  "logs": "OOMKilled; restarted 5x", "metrics": "memory climbing to limit",
+  "runbooks": [{"name": "OOMKill", "content": "raise limits; find the leak"}]
+}' | python -m json.tool
+```
+
+## LLM backend
+
+Provider resolves from `HIVEMIND_LLM_PROVIDER`:
+
+- `auto` (default) — Groq if `GROQ_API_KEY` is set, otherwise the mock.
+- `groq` — LangChain's `ChatGroq` (OpenAI-compatible, fast free tier).
+- `mock` — a deterministic model that returns valid per-node JSON and exercises
+  one reflection loop. No key, no network — this is what the tests use.
+
+## Tests
+
+```sh
+cd brain && source .venv/bin/activate
+HIVEMIND_LLM_PROVIDER=mock pytest
+```
+
+## Status & roadmap
+
+Standalone today: the graph runs and serves over HTTP, but the Go operator does
+**not** yet call it. Next: introduce a `Reasoner` seam in the operator so its
+Triaging phase POSTs to `/triage` instead of running the in-process `errgroup`
+dispatcher — the split-brain wire-up. See the repository root README.
