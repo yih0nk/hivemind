@@ -41,10 +41,24 @@ synthesizes a root-cause hypothesis, **critiques its own confidence, and loops
 to re-examine the evidence** until it is confident or hits an iteration cap —
 a cyclic graph the operator's `errgroup` DAG can't express.
 
-It runs and serves over HTTP today (Groq-backed, with a deterministic mock
-fallback for offline tests) but is **not yet wired into the operator**. The next
-step is a `Reasoner` seam so the Triaging phase POSTs to the brain instead of
-running the in-process dispatcher. See [`brain/README.md`](brain/README.md).
+The operator reaches it through a **`Reasoner` seam** ([`internal/reasoner`](internal/reasoner/)):
+the Triaging phase's synthesis step is an interface, satisfied in-process by the
+LLM synthesizer agent by default, or by an HTTP client to the brain when
+`HIVEMIND_REASONER_URL` is set. Evidence collection stays in the operator (it
+holds the cluster credentials); only the reasoning is delegated.
+
+```sh
+# Run the brain (see brain/README.md), then point the operator at it:
+export HIVEMIND_REASONER_URL=http://localhost:8090
+# The brain's reflection loop makes several LLM calls, so give it headroom:
+export HIVEMIND_AGENT_TIMEOUT_SECONDS=120
+make run
+```
+
+The brain is Groq-backed with a deterministic mock fallback for offline tests.
+Still standalone at deploy time — packaging it into the Helm chart so it ships
+alongside the operator in-cluster is the remaining step. See
+[`brain/README.md`](brain/README.md).
 
 ## Quickstart
 
