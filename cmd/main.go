@@ -269,12 +269,24 @@ func main() {
 		Timeout:       agentTimeout,
 	}
 
+	// Synthesis runs in-process by default. When HIVEMIND_REASONER_URL is
+	// set, delegate it to the external LangGraph brain instead: the operator
+	// still gathers evidence, the brain runs the reflection loop over it.
+	// Note the brain makes several LLM calls per triage, and the controller
+	// bounds this call with AgentTimeout (default 30s) -- raise
+	// HIVEMIND_AGENT_TIMEOUT_SECONDS when pointing at the brain.
+	var reasonerImpl reasoner.Reasoner = reasoner.NewInProcess(agents.NewSynthesizerAgent(llmClient))
+	if brainURL := os.Getenv("HIVEMIND_REASONER_URL"); brainURL != "" {
+		reasonerImpl = reasoner.NewHTTPReasoner(brainURL, agentTimeout)
+		setupLog.Info("Delegating synthesis to external LangGraph brain", "url", brainURL)
+	}
+
 	if err := (&controller.IncidentTriageReconciler{
 		Client:       mgr.GetClient(),
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorder("hivemind"),
 		Dispatcher:   dispatcher,
-		Reasoner:     reasoner.NewInProcess(agents.NewSynthesizerAgent(llmClient)),
+		Reasoner:     reasonerImpl,
 		PRClient:     prClient,
 		AgentTimeout: agentTimeout,
 	}).SetupWithManager(mgr); err != nil {
