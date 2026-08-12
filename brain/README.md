@@ -73,7 +73,12 @@ HIVEMIND_LLM_PROVIDER=mock pytest
 
 ## Status & roadmap
 
-Standalone today: the graph runs and serves over HTTP, but the Go operator does
-**not** yet call it. Next: introduce a `Reasoner` seam in the operator so its
-Triaging phase POSTs to `/triage` instead of running the in-process `errgroup`
-dispatcher — the split-brain wire-up. See the repository root README.
+**Wired in.** The operator calls this service through its `Reasoner` seam
+([`internal/reasoner`](../internal/reasoner/)): set `HIVEMIND_REASONER_URL` to
+this service's base URL and the Triaging phase's synthesis step POSTs to
+`/triage` instead of running the in-process synthesizer. The operator still
+gathers the evidence and passes it in; the brain runs the reflection loop.
+
+Remaining: package the brain into the Helm chart so it deploys alongside the
+operator in-cluster (Dockerfile + Deployment/Service/Secret). Until then, run it
+out-of-cluster and point the operator at it. See the repository root README.
