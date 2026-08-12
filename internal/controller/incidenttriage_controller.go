@@ -33,6 +33,7 @@ import (
 	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 	"github.com/yih0nk/hivemind/internal/agents"
 	"github.com/yih0nk/hivemind/internal/github"
+	"github.com/yih0nk/hivemind/internal/reasoner"
 )
 
 // cleanupFinalizer blocks deletion until the operator has released any
@@ -47,10 +48,11 @@ type IncidentTriageReconciler struct {
 
 	// Dispatcher fans out the evidence agents in the first Triaging pass.
 	Dispatcher *agents.Dispatcher
-	// Synthesizer runs alone in a second pass, reading the evidence
-	// agents' outputs from status -- persisted by the pass before it,
-	// never the one it runs in.
-	Synthesizer agents.Agent
+	// Reasoner runs alone in a second pass, turning the evidence agents'
+	// outputs (persisted by the pass before it, never the one it runs in)
+	// into the root-cause report. In-process by default; optionally the
+	// external LangGraph brain over HTTP.
+	Reasoner reasoner.Reasoner
 	// PRClient publishes the finished report as a pull request.
 	PRClient github.PRClient
 
@@ -189,17 +191,17 @@ func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage
 	}
 
 	// Pass 2: evidence persisted but not yet synthesized.
-	if _, ok := triage.Status.AgentOutputs[r.Synthesizer.Name()]; !ok {
+	if _, ok := triage.Status.AgentOutputs[r.Reasoner.Name()]; !ok {
 		timeout := r.AgentTimeout
 		if timeout <= 0 {
 			timeout = agents.DefaultAgentTimeout
 		}
 		synthCtx, cancel := context.WithTimeout(ctx, timeout)
-		report, err := r.Synthesizer.Run(synthCtx, triage)
+		report, err := r.Reasoner.Synthesize(synthCtx, triage)
 		cancel()
 		if err == nil {
 			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-				s.AgentOutputs[r.Synthesizer.Name()] = report
+				s.AgentOutputs[r.Reasoner.Name()] = report
 				s.Message = "synthesis complete; publishing report"
 			})
 		}

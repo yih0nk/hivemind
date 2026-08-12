@@ -32,6 +32,7 @@ import (
 	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 	"github.com/yih0nk/hivemind/internal/agents"
 	"github.com/yih0nk/hivemind/internal/github"
+	"github.com/yih0nk/hivemind/internal/reasoner"
 )
 
 // stubAgent stands in for real agents: the controller suite verifies the
@@ -76,8 +77,10 @@ var _ = Describe("IncidentTriage Controller", func() {
 						stubAgent{name: "logtriage", output: `{"likelyCause":"stub"}`},
 					},
 				},
-				Synthesizer: stubAgent{name: "synthesizer", output: `{"rootCause":"stub"}`},
-				PRClient:    &github.FakePRClient{PRURL: "https://github.com/acme/runbooks/pull/1"},
+				Reasoner: reasoner.NewInProcess(
+					stubAgent{name: "synthesizer", output: `{"rootCause":"stub"}`},
+				),
+				PRClient: &github.FakePRClient{PRURL: "https://github.com/acme/runbooks/pull/1"},
 			}
 			By("creating the custom resource for the Kind IncidentTriage")
 			err := k8sClient.Get(ctx, typeNamespacedName, incidenttriage)
@@ -138,10 +141,10 @@ var _ = Describe("IncidentTriage Controller", func() {
 		})
 
 		It("should publish a partial report when synthesis fails", func() {
-			controllerReconciler.Synthesizer = stubAgent{
+			controllerReconciler.Reasoner = reasoner.NewInProcess(stubAgent{
 				name: "synthesizer",
 				err:  fmt.Errorf("ollama unreachable"),
-			}
+			})
 
 			for range 8 {
 				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

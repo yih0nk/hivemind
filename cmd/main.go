@@ -46,6 +46,7 @@ import (
 	"github.com/yih0nk/hivemind/internal/controller"
 	"github.com/yih0nk/hivemind/internal/github"
 	"github.com/yih0nk/hivemind/internal/llm"
+	"github.com/yih0nk/hivemind/internal/reasoner"
 	amwebhook "github.com/yih0nk/hivemind/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
@@ -273,7 +274,7 @@ func main() {
 		Scheme:       mgr.GetScheme(),
 		Recorder:     mgr.GetEventRecorder("hivemind"),
 		Dispatcher:   dispatcher,
-		Synthesizer:  agents.NewSynthesizerAgent(llmClient),
+		Reasoner:     reasoner.NewInProcess(agents.NewSynthesizerAgent(llmClient)),
 		PRClient:     prClient,
 		AgentTimeout: agentTimeout,
 	}).SetupWithManager(mgr); err != nil {
