@@ -79,6 +79,17 @@ this service's base URL and the Triaging phase's synthesis step POSTs to
 `/triage` instead of running the in-process synthesizer. The operator still
 gathers the evidence and passes it in; the brain runs the reflection loop.
 
-Remaining: package the brain into the Helm chart so it deploys alongside the
-operator in-cluster (Dockerfile + Deployment/Service/Secret). Until then, run it
-out-of-cluster and point the operator at it. See the repository root README.
+**Deployable in-cluster.** The chart ships the brain as its own
+Deployment + Service (`brain.enabled`, on by default) and wires the operator's
+`HIVEMIND_REASONER_URL` at it automatically:
+
+```sh
+make docker-build-brain docker-push-brain      # build + push ghcr.io/yih0nk/hivemind-brain
+helm upgrade --install hivemind ./charts/hivemind \
+  --set llmApiKey=$GROQ_API_KEY --set brain.provider=groq
+```
+
+The brain reuses the operator's `llmApiKey` as its `GROQ_API_KEY`. Set
+`brain.enabled=false` to fall back to the operator's in-process synthesizer.
+
+Run it standalone for local dev with `python -m hivemind_brain.server` (above).
