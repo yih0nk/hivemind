@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from langgraph.types import interrupt
+
 from .llm import call_json
 from .state import TriageState
 
@@ -130,6 +132,38 @@ def route_after_critique(state: TriageState) -> str:
     return "done"
 
 
+def approval_gate(state: TriageState) -> dict[str, Any]:
+    """Pause for a human decision before finalizing, when asked to.
+
+    When ``require_approval`` is set, the node calls LangGraph's ``interrupt()``:
+    the graph stops, its state is checkpointed, and the surfaced payload (the
+    proposed root cause and fix) is handed to the caller. On resume the human's
+    decision is injected as ``interrupt()``'s return value. This is the durable,
+    resumable pause a plain function chain cannot do -- the reason the graph is
+    checkpointed. When approval is not required the gate is a no-op passthrough.
+    """
+    if not state.get("require_approval"):
+        return {"approved": True}
+
+    hypothesis = state.get("hypothesis", {})
+    decision = interrupt(
+        {
+            "type": "approval_request",
+            "root_cause": hypothesis.get("root_cause", ""),
+            "proposed_fix": hypothesis.get("proposed_fix", ""),
+            "confidence": float(state.get("confidence", 0.0)),
+            "iterations": int(state.get("iterations", 0)),
+        }
+    )
+    decision = decision or {}
+    approved = str(decision.get("action", "approve")).lower() == "approve"
+    return {
+        "approved": approved,
+        "decision": decision,
+        "history": [{"node": "approval", "approved": approved, "decision": decision}],
+    }
+
+
 def finalize(state: TriageState) -> dict[str, Any]:
     """Assemble the report returned to the caller."""
     hypothesis = state.get("hypothesis", {})
@@ -140,5 +174,7 @@ def finalize(state: TriageState) -> dict[str, Any]:
         "iterations": int(state.get("iterations", 0)),
         "critique": state.get("critique", ""),
         "evidence": state.get("evidence", {}),
+        "approved": bool(state.get("approved", True)),
+        "decision": state.get("decision", {}),
     }
     return {"report": report, "history": [{"node": "finalize", "report": report}]}

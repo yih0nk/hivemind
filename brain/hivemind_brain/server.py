@@ -8,6 +8,8 @@ The graph is compiled once at startup and reused across requests.
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import FastAPI
 
 from . import __version__
@@ -47,7 +49,9 @@ def triage(req: TriageRequest) -> TriageResponse:
         max_iterations=req.max_iterations,
         confidence_threshold=req.confidence_threshold,
     )
-    final = _graph.invoke(state)
+    # The checkpointed graph requires a thread_id even for a one-shot run.
+    config = {"configurable": {"thread_id": uuid.uuid4().hex}}
+    final = _graph.invoke(state, config)
     report = final.get("report", {})
     return TriageResponse(
         root_cause=report.get("root_cause", ""),

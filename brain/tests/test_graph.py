@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import itertools
+
+from langgraph.types import Command
+
 from hivemind_brain.config import Settings
 from hivemind_brain.graph import build_graph, initial_state
 from hivemind_brain.llm import MockChatModel, _first_json
@@ -16,6 +20,13 @@ INCIDENT = {
     "runbooks": [{"name": "oom", "content": "raise limits"}],
 }
 
+# A checkpointed graph needs a unique thread_id per run; hand these out.
+_thread_ids = (f"test-{n}" for n in itertools.count())
+
+
+def _cfg() -> dict:
+    return {"configurable": {"thread_id": next(_thread_ids)}}
+
 
 def _settings() -> Settings:
     return Settings(provider="mock", max_iterations=3, confidence_threshold=0.75)
@@ -24,7 +35,7 @@ def _settings() -> Settings:
 def test_graph_reaches_confident_report():
     settings = _settings()
     graph = build_graph(settings, model=MockChatModel())
-    final = graph.invoke(initial_state(INCIDENT, settings))
+    final = graph.invoke(initial_state(INCIDENT, settings), _cfg())
 
     report = final["report"]
     assert report["root_cause"]
@@ -37,7 +48,7 @@ def test_reflection_loop_runs_at_least_one_extra_pass():
     # loop back through `gather` at least once before converging.
     settings = _settings()
     graph = build_graph(settings, model=MockChatModel())
-    final = graph.invoke(initial_state(INCIDENT, settings))
+    final = graph.invoke(initial_state(INCIDENT, settings), _cfg())
 
     assert final["report"]["iterations"] >= 2
     gather_runs = [h for h in final["history"] if h.get("node") == "gather"]
@@ -62,3 +73,53 @@ def test_route_loops_when_uncertain_with_budget():
 def test_first_json_survives_prose_and_double_block():
     raw = 'Sure! Here is the result:\n```json\n{"a": 1}\n```\nand extra {"b": 2}'
     assert _first_json(raw) == {"a": 1}
+
+
+# --- human-in-the-loop approval gate ---
+
+
+def test_gated_run_interrupts_before_finalizing():
+    settings = _settings()
+    graph = build_graph(settings, model=MockChatModel())
+    result = graph.invoke(
+        initial_state(INCIDENT, settings, require_approval=True), _cfg()
+    )
+
+    # The graph paused at the approval gate rather than producing a report.
+    assert "__interrupt__" in result
+    assert "report" not in result
+    payload = result["__interrupt__"][0].value
+    assert payload["type"] == "approval_request"
+    assert payload["root_cause"]  # the human sees the proposal before deciding
+
+
+def test_resume_approve_finalizes_report():
+    settings = _settings()
+    graph = build_graph(settings, model=MockChatModel())
+    cfg = _cfg()
+    graph.invoke(initial_state(INCIDENT, settings, require_approval=True), cfg)
+
+    final = graph.invoke(Command(resume={"action": "approve", "note": "lgtm"}), cfg)
+    assert final["report"]["approved"] is True
+    assert final["report"]["root_cause"]
+    assert final["report"]["decision"]["note"] == "lgtm"
+
+
+def test_resume_reject_marks_not_approved():
+    settings = _settings()
+    graph = build_graph(settings, model=MockChatModel())
+    cfg = _cfg()
+    graph.invoke(initial_state(INCIDENT, settings, require_approval=True), cfg)
+
+    final = graph.invoke(Command(resume={"action": "reject", "note": "risky"}), cfg)
+    assert final["report"]["approved"] is False
+
+
+def test_non_gated_run_never_interrupts():
+    settings = _settings()
+    graph = build_graph(settings, model=MockChatModel())
+    final = graph.invoke(
+        initial_state(INCIDENT, settings, require_approval=False), _cfg()
+    )
+    assert "__interrupt__" not in final
+    assert final["report"]["approved"] is True
