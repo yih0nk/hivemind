@@ -1,0 +1,71 @@
+{{- if .Values.brain.enabled }}
+# LangGraph reasoning service. The operator delegates incident synthesis to it
+# when brain.enabled (see the HIVEMIND_REASONER_URL env on the operator
+# Deployment). It holds no cluster credentials -- it only reasons over the
+# evidence the operator POSTs to it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hivemind-brain
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    app.kubernetes.io/name: hivemind-brain
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hivemind-brain
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hivemind-brain
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: brain
+          image: "{{ .Values.brain.image.repository }}:{{ .Values.brain.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.brain.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: HIVEMIND_BRAIN_PORT
+              value: {{ .Values.brain.port | quote }}
+            - name: HIVEMIND_LLM_PROVIDER
+              value: {{ .Values.brain.provider | quote }}
+            - name: GROQ_MODEL
+              value: {{ .Values.brain.groqModel | quote }}
+            - name: HIVEMIND_MAX_ITERATIONS
+              value: {{ .Values.brain.maxIterations | quote }}
+            - name: HIVEMIND_CONFIDENCE_THRESHOLD
+              value: {{ .Values.brain.confidenceThreshold | quote }}
+            {{- if .Values.llmApiKey }}
+            # Reuses the same Groq key as the operator (values.llmApiKey).
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hivemind-secrets
+                  key: GROQ_API_KEY
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.brain.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.brain.resources | nindent 12 }}
+{{- end }}
