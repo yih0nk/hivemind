@@ -14,8 +14,34 @@ ollamaModel: llama3.2
 llmApiKey: ""
 
 prometheusURL: http://prometheus-operated:9090
+# Bounds each agent run AND the synthesis call. When brain.enabled, this also
+# bounds the brain's reflection loop (several LLM calls) -- keep it generous.
 agentTimeoutSeconds: 60
 webhookPort: 8080
+
+# LangGraph reasoning brain. When enabled, the operator delegates incident
+# synthesis to the in-cluster brain (HIVEMIND_REASONER_URL is wired
+# automatically); disable to use the operator's in-process synthesizer instead.
+brain:
+  enabled: true
+  image:
+    repository: ghcr.io/yih0nk/hivemind-brain
+    tag: latest
+    pullPolicy: IfNotPresent
+  # auto = Groq when a key is present (reuses llmApiKey above), else the
+  # deterministic mock. Force with "groq" or "mock".
+  provider: auto
+  groqModel: llama-3.3-70b-versatile
+  port: 8090
+  maxIterations: 3
+  confidenceThreshold: "0.75"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
 
 # Leave empty to run with the fake PR client: triage completes and the
 # report stays in status.agentOutputs, but no GitHub PR is opened.

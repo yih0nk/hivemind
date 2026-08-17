@@ -47,17 +47,19 @@ LLM synthesizer agent by default, or by an HTTP client to the brain when
 `HIVEMIND_REASONER_URL` is set. Evidence collection stays in the operator (it
 holds the cluster credentials); only the reasoning is delegated.
 
+The chart ships the brain as its own Deployment + Service (`brain.enabled`, on by
+default) and wires `HIVEMIND_REASONER_URL` at it automatically:
+
 ```sh
-# Run the brain (see brain/README.md), then point the operator at it:
-export HIVEMIND_REASONER_URL=http://localhost:8090
-# The brain's reflection loop makes several LLM calls, so give it headroom:
-export HIVEMIND_AGENT_TIMEOUT_SECONDS=120
-make run
+make docker-build-brain docker-push-brain
+helm upgrade --install hivemind ./charts/hivemind \
+  --set llmApiKey=$GROQ_API_KEY --set brain.provider=groq
 ```
 
-The brain is Groq-backed with a deterministic mock fallback for offline tests.
-Still standalone at deploy time — packaging it into the Helm chart so it ships
-alongside the operator in-cluster is the remaining step. See
+For local dev, run the brain out-of-cluster (`python -m hivemind_brain.server`)
+and `export HIVEMIND_REASONER_URL=http://localhost:8090` before `make run`. The
+brain is Groq-backed with a deterministic mock fallback for offline tests; set
+`brain.enabled=false` to use the operator's in-process synthesizer instead. See
 [`brain/README.md`](brain/README.md).
 
 ## Quickstart

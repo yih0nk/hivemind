@@ -38,6 +38,14 @@ spec:
               value: {{ .Values.prometheusURL | quote }}
             - name: HIVEMIND_AGENT_TIMEOUT_SECONDS
               value: {{ .Values.agentTimeoutSeconds | quote }}
+            {{- if .Values.brain.enabled }}
+            # Delegate synthesis to the in-cluster LangGraph brain. Evidence
+            # collection stays here; only the reasoning is sent over. The brain's
+            # reflection loop makes several LLM calls, so agentTimeoutSeconds
+            # bounds it -- keep that generous when the brain is enabled.
+            - name: HIVEMIND_REASONER_URL
+              value: "http://hivemind-brain.{{ .Values.operatorNamespace }}:{{ .Values.brain.port }}"
+            {{- end }}
             - name: HIVEMIND_WEBHOOK_PORT
               value: {{ .Values.webhookPort | quote }}
             - name: HIVEMIND_GITHUB_REPO

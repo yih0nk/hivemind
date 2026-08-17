@@ -1,5 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+# Image URL for the LangGraph reasoning brain (brain/ subdirectory).
+BRAIN_IMG ?= ghcr.io/yih0nk/hivemind-brain:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -126,6 +128,14 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-build-brain
+docker-build-brain: ## Build docker image with the LangGraph reasoning brain.
+	$(CONTAINER_TOOL) build -t ${BRAIN_IMG} brain
+
+.PHONY: docker-push-brain
+docker-push-brain: ## Push the brain docker image.
+	$(CONTAINER_TOOL) push ${BRAIN_IMG}
 
 .PHONY: helm-install
 helm-install: ## Install or upgrade the hivemind chart into the current cluster.

@@ -1,0 +1,19 @@
+{{- if .Values.brain.enabled }}
+# In-cluster entry point for the brain: the operator reaches it at
+# http://hivemind-brain.<operatorNamespace>:<brain.port>.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hivemind-brain
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    app.kubernetes.io/name: hivemind-brain
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hivemind-brain
+  ports:
+    - name: http
+      port: {{ .Values.brain.port }}
+      targetPort: http
+{{- end }}
