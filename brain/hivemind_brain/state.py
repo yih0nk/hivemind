@@ -17,6 +17,7 @@ class TriageState(TypedDict, total=False):
     incident: dict[str, Any]  # alert, namespace, pod, raw logs/metrics, runbooks
     max_iterations: int
     confidence_threshold: float
+    require_approval: bool  # pause for a human decision before finalizing
 
     # --- Working state (mutated by nodes across the loop) ---
     evidence: dict[str, Any]  # per-source summaries produced by `gather`
@@ -25,6 +26,8 @@ class TriageState(TypedDict, total=False):
     critique: str  # critic feedback, fed back into the next `gather`
     guidance: str  # what the next gather pass should focus on
     iterations: int  # completed critique rounds
+    approved: bool  # human verdict from the approval gate
+    decision: dict[str, Any]  # {action: approve|reject, note: str} from the human
 
     # Append-only audit trail of every node execution.
     history: Annotated[list[dict[str, Any]], add]

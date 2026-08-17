@@ -19,8 +19,9 @@ rather than the operator's `errgroup` fan-out — a fixed DAG can't express the
 START → gather → synthesize → critique → ┐
           ▲                               │ route_after_critique
           └──────────── loop ─────────────┤   (confidence < threshold
-                                          │    and iterations left?)
-                                          └── done → finalize → END
+                        done → approval → finalize → END
+                                 │
+                            interrupt() ⏸  (only when require_approval)
 ```
 
 | Node         | Role                                                              |
@@ -28,10 +29,37 @@ START → gather → synthesize → critique → ┐
 | `gather`     | Summarize raw signals per source; re-focus on the critic's guidance on a reloop |
 | `synthesize` | Combine the evidence into one root-cause hypothesis + proposed fix |
 | `critique`   | Score confidence (0–1) and emit guidance for another pass          |
+| `approval`   | Human-in-the-loop gate: `interrupt()`s for a decision when asked   |
 | `finalize`   | Assemble the report returned to the caller                         |
 
 The state schema, reducers, and edges live in
 [`hivemind_brain/`](hivemind_brain/).
+
+## Human-in-the-loop approval
+
+The `approval` node is the second thing a fixed DAG can't do. With
+`require_approval`, the graph reaches a proposed root cause, then **`interrupt()`s** —
+it checkpoints its full state and pauses. `/triage` returns the pending proposal
+and a `thread_id`; a human resumes it later with `/resume`, and the graph
+continues from exactly where it stopped. That durable, resumable pause is what a
+plain function chain can't provide.
+
+```sh
+# 1) Gated triage — pauses, returns a thread_id + the proposal for review.
+curl -s localhost:8090/triage -H 'content-type: application/json' -d '{
+  "alert":"OOMKilled","logs":"OOMKilled; restarted 5x","require_approval":true
+}'   # → {"status":"awaiting_approval","thread_id":"…","approval_request":{…}}
+
+# 2) A human approves (or rejects) — the graph resumes and finalizes.
+curl -s localhost:8090/resume -H 'content-type: application/json' -d '{
+  "thread_id":"…","action":"approve","note":"lgtm"
+}'   # → {"status":"completed","approved":true,"root_cause":"…"}
+```
+
+State is held by an in-memory checkpointer, so the brain runs single-replica
+(`brain.enabled` deploys one). A multi-replica brain would swap in a shared
+checkpointer (Postgres/Redis). The default `/triage` (no `require_approval`) is
+unchanged and still completes in one call.
 
 ## Run it
 

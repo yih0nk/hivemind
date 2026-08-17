@@ -32,6 +32,11 @@ class TriageRequest(BaseModel):
     confidence_threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Override the confidence gate."
     )
+    require_approval: bool = Field(
+        False,
+        description="Pause for a human decision before finalizing. When true the "
+        "response has status 'awaiting_approval' and a thread_id to resume with.",
+    )
 
     def to_incident(self) -> dict[str, Any]:
         return {
@@ -45,10 +50,25 @@ class TriageRequest(BaseModel):
 
 
 class TriageResponse(BaseModel):
-    root_cause: str
-    proposed_fix: str
-    confidence: float
-    iterations: int
+    # status is "completed" (report fields populated) or "awaiting_approval"
+    # (approval_request + thread_id populated, report fields empty). The flat
+    # report fields stay top-level for backward compatibility with the Go
+    # operator, which decodes them directly and ignores the rest.
+    status: str = "completed"
+    thread_id: str = ""
+    approval_request: dict[str, Any] | None = None
+    approved: bool = True
+
+    root_cause: str = ""
+    proposed_fix: str = ""
+    confidence: float = 0.0
+    iterations: int = 0
     critique: str = ""
     evidence: dict[str, Any] = Field(default_factory=dict)
     history: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ResumeRequest(BaseModel):
+    thread_id: str = Field(..., description="thread_id from an awaiting_approval response.")
+    action: str = Field("approve", description="'approve' or 'reject'.")
+    note: str = Field("", description="Optional reviewer note, recorded on the report.")
