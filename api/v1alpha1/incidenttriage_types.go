@@ -36,8 +36,8 @@ const (
 type TriagePhase string
 
 const (
-	PhasePending    TriagePhase = "Pending"
-	PhaseTriaging   TriagePhase = "Triaging"
+	PhasePending  TriagePhase = "Pending"
+	PhaseTriaging TriagePhase = "Triaging"
 	// PhaseAwaitingApproval means the reasoner paused for a human decision;
 	// the run resumes when an approval annotation is applied to the CR.
 	PhaseAwaitingApproval TriagePhase = "AwaitingApproval"
