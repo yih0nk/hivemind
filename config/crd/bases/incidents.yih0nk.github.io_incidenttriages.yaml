@@ -72,6 +72,12 @@ spec:
               prometheusURL:
                 description: prometheusURL is where the metrics-correlator agent queries.
                 type: string
+              requireApproval:
+                description: |-
+                  requireApproval pauses the run for a human decision before the report
+                  is finalized and any PR is opened. Requires the external reasoning brain
+                  (HIVEMIND_REASONER_URL); the in-process synthesizer cannot pause.
+                type: boolean
               runbookConfigMap:
                 description: |-
                   runbookConfigMap names the ConfigMap (in the operator's namespace)
@@ -107,16 +113,27 @@ spec:
               message:
                 description: message is a human-readable note about the current phase.
                 type: string
+              pendingProposal:
+                description: |-
+                  pendingProposal is a human-readable summary of the root cause/fix awaiting
+                  approval, so a reviewer can see what they are approving via the CR.
+                type: string
               phase:
                 description: phase is the current lifecycle stage of the triage run.
                 enum:
                 - Pending
                 - Triaging
+                - AwaitingApproval
                 - Remediated
                 - Failed
                 type: string
               prURL:
                 description: prURL links to the root-cause report PR once opened.
+                type: string
+              reasonerThreadID:
+                description: |-
+                  reasonerThreadID identifies a reasoning run paused at the approval gate,
+                  used to resume it once a human decides. Set only while AwaitingApproval.
                 type: string
               startTime:
                 description: startTime is when agent dispatch began.
