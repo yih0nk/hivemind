@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -95,6 +96,10 @@ type AlertmanagerHandler struct {
 
 	// PrometheusURL is stamped into every CR's spec.
 	PrometheusURL string
+
+	// RequireApproval is stamped into every CR's spec, so alert-driven
+	// triages pause for a human before any PR is opened.
+	RequireApproval bool
 }
 
 var _ http.Handler = (*AlertmanagerHandler)(nil)
@@ -104,16 +109,18 @@ var _ http.Handler = (*AlertmanagerHandler)(nil)
 // +kubebuilder:rbac:groups=incidents.yih0nk.github.io,resources=incidenttriages,verbs=create
 
 // NewAlertmanagerHandler builds a handler configured from the environment:
-// HIVEMIND_GITHUB_REPO and HIVEMIND_PROMETHEUS_URL.
+// HIVEMIND_GITHUB_REPO, HIVEMIND_PROMETHEUS_URL, and HIVEMIND_REQUIRE_APPROVAL.
 func NewAlertmanagerHandler(c client.Client) *AlertmanagerHandler {
 	promURL := os.Getenv("HIVEMIND_PROMETHEUS_URL")
 	if promURL == "" {
 		promURL = defaultPrometheusURL
 	}
+	requireApproval, _ := strconv.ParseBool(os.Getenv("HIVEMIND_REQUIRE_APPROVAL"))
 	return &AlertmanagerHandler{
-		Client:        c,
-		GithubRepo:    os.Getenv("HIVEMIND_GITHUB_REPO"),
-		PrometheusURL: promURL,
+		Client:          c,
+		GithubRepo:      os.Getenv("HIVEMIND_GITHUB_REPO"),
+		PrometheusURL:   promURL,
+		RequireApproval: requireApproval,
 	}
 }
 
@@ -171,6 +178,7 @@ func (h *AlertmanagerHandler) triageFor(alert Alert) *incidentsv1alpha1.Incident
 			AffectedPodSelector: podSelectorFor(alert.Labels),
 			PrometheusURL:       h.PrometheusURL,
 			GithubRepo:          h.GithubRepo,
+			RequireApproval:     h.RequireApproval,
 		},
 	}
 }

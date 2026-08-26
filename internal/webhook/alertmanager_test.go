@@ -176,6 +176,30 @@ func TestAlertmanagerHandler(t *testing.T) {
 	}
 }
 
+func TestAlertmanagerHandlerStampsRequireApproval(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(newTestScheme(t)).Build()
+	h := &AlertmanagerHandler{Client: c, RequireApproval: true}
+
+	rec := postMessage(t, h, Message{Version: "4", Status: statusFiring, Alerts: []Alert{{
+		Status: statusFiring,
+		Labels: map[string]string{labelAlertname: "OOMKilled", labelNamespace: "prod"},
+	}}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var list incidentsv1alpha1.IncidentTriageList
+	if err := c.List(t.Context(), &list); err != nil {
+		t.Fatalf("listing IncidentTriages: %v", err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("got %d IncidentTriages, want 1", len(list.Items))
+	}
+	if !list.Items[0].Spec.RequireApproval {
+		t.Error("expected spec.requireApproval stamped true")
+	}
+}
+
 func TestAlertmanagerHandlerMalformedPayload(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(newTestScheme(t)).Build()
 	h := &AlertmanagerHandler{Client: c}
