@@ -1,0 +1,21 @@
+apiVersion: incidents.yih0nk.github.io/v1alpha1
+kind: IncidentTriage
+metadata:
+  labels:
+    app.kubernetes.io/name: hivemind
+    app.kubernetes.io/managed-by: kustomize
+  name: checkout-oom-gated
+spec:
+  alertName: CheckoutOOMKilled
+  severity: critical
+  affectedNamespace: default
+  affectedPodSelector:
+    app: checkout
+  prometheusURL: http://prometheus.monitoring.svc:9090
+  githubRepo: yih0nk/hivemind
+  # Pause for a human decision before finalizing / opening a PR.
+  # Requires the brain (HIVEMIND_REASONER_URL). Once the run reaches
+  # AwaitingApproval, decide with:
+  #   kubectl annotate incidenttriage checkout-oom-gated \
+  #     hivemind.io/approval=approve   # or =reject
+  requireApproval: true
