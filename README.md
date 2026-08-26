@@ -62,6 +62,27 @@ brain is Groq-backed with a deterministic mock fallback for offline tests; set
 `brain.enabled=false` to use the operator's in-process synthesizer instead. See
 [`brain/README.md`](brain/README.md).
 
+### Human-in-the-loop approval
+
+Set `spec.requireApproval: true` on an `IncidentTriage` (or `--set
+requireApproval=true` to gate every alert-driven run) and the operator **pauses
+before opening any PR**. The brain runs its reflection loop, then stops at a
+`AwaitingApproval` phase with the proposed root cause and fix in
+`status.pendingProposal`. A human decides by annotating the CR:
+
+```sh
+kubectl get incidenttriage checkout-oom-gated \
+  -o jsonpath='{.status.pendingProposal}'          # review the proposal
+
+kubectl annotate incidenttriage checkout-oom-gated \
+  hivemind.io/approval=approve                      # or =reject
+```
+
+Approve → the run resumes, opens the PR (its body notes the human review), and
+reaches `Remediated`. Reject → it ends `Remediated` with the report recorded and
+**no PR**. Requires the brain (the in-process synthesizer cannot pause).
+`hack/approve-incident.sh` runs the whole flow end to end.
+
 ## Quickstart
 
 Prerequisites: Go 1.26+, kubectl, [kind](https://kind.sigs.k8s.io/), Helm 3, and [Ollama](https://ollama.com/) with the `llama3.2` model pulled.
