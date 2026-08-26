@@ -36,14 +36,38 @@ import (
 // out too, for the same reason).
 const SynthesizerKey = "synthesizer"
 
+// Reasoning outcome statuses.
+const (
+	// StatusCompleted means Report holds the finished synthesis.
+	StatusCompleted = "completed"
+	// StatusAwaitingApproval means the run paused at the approval gate;
+	// ThreadID resumes it and Proposal summarizes what awaits a decision.
+	StatusAwaitingApproval = "awaiting_approval"
+)
+
+// Result is the outcome of a synthesis or resume. A completed result carries
+// the report; an awaiting-approval result carries the thread id to resume with
+// and a human-readable proposal summary.
+type Result struct {
+	Status   string
+	Report   string // synthesizer-schema JSON, when Status == completed
+	ThreadID string // when Status == awaiting_approval
+	Proposal string // human-readable root cause/fix, when awaiting approval
+}
+
 // Reasoner produces the root-cause report from the evidence the operator
-// has already gathered into triage.Status.AgentOutputs. The return value
-// is a JSON string in the synthesizer schema; it lands verbatim in
+// has already gathered into triage.Status.AgentOutputs. A completed Result's
+// Report is a JSON string in the synthesizer schema; it lands verbatim in
 // status.agentOutputs[Name()] and is rendered into the incident PR.
 type Reasoner interface {
 	// Name is the status.agentOutputs key the report is stored under.
 	Name() string
-	// Synthesize returns the root-cause report as a JSON string, built
-	// from triage.Spec and the upstream agent outputs in triage.Status.
-	Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (string, error)
+	// Synthesize runs the reasoning over the upstream agent outputs. When
+	// triage.Spec.RequireApproval is set and the reasoner supports it, the
+	// Result may be StatusAwaitingApproval instead of a finished report.
+	Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (Result, error)
+	// Resume continues a run paused at the approval gate with a human
+	// decision. approve=false records a rejection. Reasoners that cannot
+	// pause return an error.
+	Resume(ctx context.Context, threadID string, approve bool, note string) (Result, error)
 }

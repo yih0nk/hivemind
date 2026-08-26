@@ -18,6 +18,7 @@ package reasoner
 
 import (
 	"context"
+	"errors"
 
 	incidentsv1alpha1 "github.com/yih0nk/hivemind/api/v1alpha1"
 	"github.com/yih0nk/hivemind/internal/agents"
@@ -39,6 +40,17 @@ func NewInProcess(agent agents.Agent) InProcess {
 
 func (i InProcess) Name() string { return i.Agent.Name() }
 
-func (i InProcess) Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (string, error) {
-	return i.Agent.Run(ctx, triage)
+// Synthesize runs the agent in one pass. It cannot pause, so it ignores
+// RequireApproval and always returns a completed result.
+func (i InProcess) Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (Result, error) {
+	report, err := i.Agent.Run(ctx, triage)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Status: StatusCompleted, Report: report}, nil
+}
+
+// Resume is unsupported: the in-process synthesizer never pauses.
+func (i InProcess) Resume(context.Context, string, bool, string) (Result, error) {
+	return Result{}, errors.New("in-process reasoner does not support approval resume")
 }
