@@ -50,6 +50,8 @@ spec:
               value: {{ .Values.webhookPort | quote }}
             - name: HIVEMIND_GITHUB_REPO
               value: {{ .Values.githubRepo | quote }}
+            - name: HIVEMIND_REQUIRE_APPROVAL
+              value: {{ .Values.requireApproval | quote }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:
