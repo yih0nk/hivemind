@@ -19,6 +19,14 @@ def test_healthz_reports_mock_provider():
     body = resp.json()
     assert body["status"] == "ok"
     assert body["provider"] == "mock"
+    assert body["memory"]["enabled"] is True
+
+
+def test_memory_grows_as_triages_complete():
+    before = client.get("/healthz").json()["memory"]["size"]
+    client.post("/triage", json={"alert": "OOMKilled", "logs": "OOMKilled"})
+    after = client.get("/healthz").json()["memory"]["size"]
+    assert after == before + 1
 
 
 def test_triage_returns_report():
