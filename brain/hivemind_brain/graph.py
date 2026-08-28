@@ -25,28 +25,50 @@ from langgraph.graph import END, START, StateGraph
 
 from .config import Settings
 from .llm import build_model
+from .memory import HashingEmbeddings, IncidentMemory
 from .nodes import (
     approval_gate,
     finalize,
     make_critique,
     make_gather,
+    make_recall,
+    make_remember,
     make_synthesize,
     route_after_critique,
 )
 from .state import TriageState
 
+# Sentinel: distinguishes "caller did not specify memory" (build the default
+# from settings) from "caller passed None" (disable memory).
+_DEFAULT_MEMORY = object()
 
-def build_graph(settings: Settings | None = None, model: Any | None = None):
+
+def default_memory(settings: Settings) -> IncidentMemory | None:
+    """Build the incident memory from settings, or None when disabled."""
+    if not settings.memory_enabled:
+        return None
+    return IncidentMemory(HashingEmbeddings(settings.memory_dim), settings.memory_k)
+
+
+def build_graph(
+    settings: Settings | None = None,
+    model: Any | None = None,
+    memory: Any = _DEFAULT_MEMORY,
+):
     """Compile the reflection graph.
 
     ``model`` can be injected (tests pass a mock directly); otherwise it is
-    built from ``settings``. Compiled with an in-memory checkpointer so the
-    approval interrupt can pause and resume; a single-replica deployment keeps
-    that state addressable by thread_id. A multi-replica brain would swap in a
-    shared checkpointer (Postgres/Redis).
+    built from ``settings``. ``memory`` defaults to one built from settings;
+    pass an IncidentMemory to inject one, or None to disable recall/remember.
+
+    Compiled with an in-memory checkpointer so the approval interrupt can pause
+    and resume; a single-replica deployment keeps that state (and the memory
+    store) addressable. A multi-replica brain would swap in shared backends.
     """
     settings = settings or Settings.from_env()
     model = model if model is not None else build_model(settings)
+    if memory is _DEFAULT_MEMORY:
+        memory = default_memory(settings)
 
     builder = StateGraph(TriageState)
     builder.add_node("gather", make_gather(model))
@@ -55,7 +77,6 @@ def build_graph(settings: Settings | None = None, model: Any | None = None):
     builder.add_node("approval", approval_gate)
     builder.add_node("finalize", finalize)
 
-    builder.add_edge(START, "gather")
     builder.add_edge("gather", "synthesize")
     builder.add_edge("synthesize", "critique")
     builder.add_conditional_edges(
@@ -64,7 +85,19 @@ def build_graph(settings: Settings | None = None, model: Any | None = None):
         {"loop": "gather", "done": "approval"},
     )
     builder.add_edge("approval", "finalize")
-    builder.add_edge("finalize", END)
+
+    # Bookend the graph with memory when enabled: recall similar incidents
+    # before gathering, remember this one after finalizing.
+    if memory is not None:
+        builder.add_node("recall", make_recall(memory))
+        builder.add_node("remember", make_remember(memory))
+        builder.add_edge(START, "recall")
+        builder.add_edge("recall", "gather")
+        builder.add_edge("finalize", "remember")
+        builder.add_edge("remember", END)
+    else:
+        builder.add_edge(START, "gather")
+        builder.add_edge("finalize", END)
 
     return builder.compile(checkpointer=MemorySaver())
 
