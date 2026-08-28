@@ -5,6 +5,8 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 pydantic>=2.6.0
 python-dotenv>=1.0.0
+# Backs the in-memory incident-memory vector store's cosine similarity.
+numpy>=1.26.0
 
 # Dev / test
 pytest>=8.0.0
