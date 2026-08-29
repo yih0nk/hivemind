@@ -93,10 +93,19 @@ The `gather` node has two modes (`HIVEMIND_GATHER_MODE`, or `brain.gatherMode`):
   has enough or hits `HIVEMIND_REACT_MAX_STEPS`. The trace lands in the node's
   history.
 
-ReAct uses **JSON actions** rather than native tool-calling, so it works with any
-chat model — including the offline mock — and needs no tool-calling support from
-the provider. (The brain has no cluster access, so the tools query the evidence
-the operator already gathered, not the live cluster.)
+ReAct uses **JSON actions** rather than native tool-calling, so it works with the
+offline mock and needs no tool-calling support from the provider. (The brain has
+no cluster access, so the tools query the evidence the operator already gathered,
+not the live cluster.)
+
+> **Caveat — model compatibility.** JSON-action ReAct depends on the model
+> reliably emitting *only* a JSON object. Some current models don't: the Groq
+> `openai/gpt-oss-*` models emit a *native* tool call (rejected as
+> `tool_use_failed`), and `qwen3.*` wraps the JSON in reasoning prose. So `react`
+> is validated against the mock but not against those models — **`summary` is the
+> robust default and what real-Groq runs should use today.** The production fix is
+> native tool-calling (`bind_tools`) for capable providers, with the JSON-action
+> loop as the fallback for models without it; that's the planned follow-up.
 
 ## Run it
 
