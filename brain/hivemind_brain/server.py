@@ -44,6 +44,7 @@ def healthz() -> dict[str, object]:
         "status": "ok",
         "version": __version__,
         "provider": _settings.resolved_provider,
+        "gather_mode": _settings.gather_mode,
         "memory": {
             "enabled": _memory is not None,
             "size": _memory.size() if _memory is not None else 0,

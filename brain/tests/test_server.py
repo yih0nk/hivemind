@@ -20,6 +20,7 @@ def test_healthz_reports_mock_provider():
     assert body["status"] == "ok"
     assert body["provider"] == "mock"
     assert body["memory"]["enabled"] is True
+    assert body["gather_mode"] in ("summary", "react")
 
 
 def test_memory_grows_as_triages_complete():

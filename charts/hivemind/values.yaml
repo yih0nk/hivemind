@@ -35,6 +35,9 @@ brain:
   port: 8090
   maxIterations: 3
   confidenceThreshold: "0.75"
+  # Evidence gathering: "summary" (one LLM pass) or "react" (a tool-choosing
+  # agent that investigates the evidence bundle over several steps).
+  gatherMode: summary
   # Incident memory: recall similar past incidents to prime synthesis and
   # remember finalized ones. In-memory + single-replica (like the approval
   # checkpointer); disable with memoryEnabled: false.
