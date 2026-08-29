@@ -27,7 +27,7 @@ START → recall → gather → synthesize → critique → ┐
 | Node         | Role                                                              |
 |--------------|-------------------------------------------------------------------|
 | `recall`     | Retrieve similar past incidents from memory to prime synthesis    |
-| `gather`     | Summarize raw signals per source; re-focus on the critic's guidance on a reloop |
+| `gather`     | Distill evidence per source — one summary pass, or a tool-choosing ReAct investigation (see below) |
 | `synthesize` | Combine the evidence (+ recalled incidents) into one root-cause hypothesis + fix |
 | `critique`   | Score confidence (0–1) and emit guidance for another pass          |
 | `approval`   | Human-in-the-loop gate: `interrupt()`s for a decision when asked   |
@@ -80,6 +80,32 @@ offline; swap in a semantic embedding model for nuance. The store is in-memory
 and single-replica (like the approval checkpointer); `/healthz` reports its size.
 Disable with `HIVEMIND_MEMORY_ENABLED=false` (or `brain.memoryEnabled: false`);
 tune recall breadth with `HIVEMIND_MEMORY_K`.
+
+## Evidence gathering: summary vs ReAct
+
+The `gather` node has two modes (`HIVEMIND_GATHER_MODE`, or `brain.gatherMode`):
+
+- **`summary`** (default) — one LLM pass distills the whole evidence bundle.
+- **`react`** — a tool-choosing agent ([`tools.py`](hivemind_brain/tools.py))
+  investigates the bundle instead of summarizing it blind: each step it decides
+  which tool to call (`search_logs`, `get_metrics`, `list_runbooks`,
+  `read_runbook`) over the POSTed evidence, accumulating observations until it
+  has enough or hits `HIVEMIND_REACT_MAX_STEPS`. The trace lands in the node's
+  history.
+
+ReAct uses **JSON actions** rather than native tool-calling, so it works with the
+offline mock and needs no tool-calling support from the provider. (The brain has
+no cluster access, so the tools query the evidence the operator already gathered,
+not the live cluster.)
+
+> **Caveat — model compatibility.** JSON-action ReAct depends on the model
+> reliably emitting *only* a JSON object. Some current models don't: the Groq
+> `openai/gpt-oss-*` models emit a *native* tool call (rejected as
+> `tool_use_failed`), and `qwen3.*` wraps the JSON in reasoning prose. So `react`
+> is validated against the mock but not against those models — **`summary` is the
+> robust default and what real-Groq runs should use today.** The production fix is
+> native tool-calling (`bind_tools`) for capable providers, with the JSON-action
+> loop as the fallback for models without it; that's the planned follow-up.
 
 ## Run it
 

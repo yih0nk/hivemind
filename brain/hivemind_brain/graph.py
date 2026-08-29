@@ -31,6 +31,7 @@ from .nodes import (
     finalize,
     make_critique,
     make_gather,
+    make_react_gather,
     make_recall,
     make_remember,
     make_synthesize,
@@ -70,8 +71,14 @@ def build_graph(
     if memory is _DEFAULT_MEMORY:
         memory = default_memory(settings)
 
+    gather_node = (
+        make_react_gather(model, settings.react_max_steps)
+        if settings.gather_mode == "react"
+        else make_gather(model)
+    )
+
     builder = StateGraph(TriageState)
-    builder.add_node("gather", make_gather(model))
+    builder.add_node("gather", gather_node)
     builder.add_node("synthesize", make_synthesize(model))
     builder.add_node("critique", make_critique(model))
     builder.add_node("approval", approval_gate)

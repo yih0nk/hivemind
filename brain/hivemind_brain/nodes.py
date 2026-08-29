@@ -15,6 +15,7 @@ from langgraph.types import interrupt
 
 from .llm import call_json
 from .state import TriageState
+from .tools import list_runbooks, run_tool, tool_descriptions
 
 Node = Callable[[TriageState], dict[str, Any]]
 
@@ -59,6 +60,74 @@ def make_gather(model: Any) -> Node:
         }
 
     return gather
+
+
+def make_react_gather(model: Any, max_steps: int = 4) -> Node:
+    """Gather evidence by *choosing tools*, ReAct-style, instead of one summary.
+
+    Each step the agent returns a JSON action (call a tool over the evidence
+    bundle) or a JSON finish (the evidence it distilled). It runs until it
+    finishes or hits max_steps -- turning "summarize everything blind" into an
+    agent that decides what to look at. Uses JSON actions rather than native
+    tool-calling so it works with any chat model, including the offline mock.
+    """
+
+    def react_gather(state: TriageState) -> dict[str, Any]:
+        incident = state.get("incident", {})
+        guidance = state.get("guidance", "")
+        system = (
+            "TASK: react_gather. You are an SRE investigating an incident by "
+            "calling tools over the available evidence. Tools:\n"
+            + tool_descriptions()
+            + "\n\nEach step respond with JSON, either\n"
+            '  {"thought": "...", "action": "<tool>", "action_input": "<arg>"}\n'
+            "to call a tool, or when you have enough evidence\n"
+            '  {"thought": "...", "done": true, "evidence": '
+            '{"logs": "...", "metrics": "...", "runbooks": "..."}}\n'
+            "to hand a per-source summary to synthesis."
+        )
+        scratchpad: list[dict[str, Any]] = []
+        for step in range(max_steps):
+            decision = call_json(model, system, _react_prompt(incident, guidance, scratchpad))
+            if decision.get("done"):
+                evidence = decision.get("evidence") or {}
+                return {
+                    "evidence": evidence,
+                    "history": [{"node": "gather", "mode": "react",
+                                 "steps": step + 1, "trace": scratchpad}],
+                }
+            observation = run_tool(
+                str(decision.get("action", "")), incident, str(decision.get("action_input", "")))
+            scratchpad.append({
+                "action": decision.get("action", ""),
+                "action_input": decision.get("action_input", ""),
+                "observation": observation[:500],
+            })
+
+        # Out of steps: hand synthesis the raw bundle rather than nothing.
+        return {
+            "evidence": {
+                "logs": incident.get("logs", ""),
+                "metrics": incident.get("metrics", ""),
+                "runbooks": list_runbooks(incident),
+            },
+            "history": [{"node": "gather", "mode": "react", "steps": max_steps,
+                         "trace": scratchpad, "truncated": True}],
+        }
+
+    return react_gather
+
+
+def _react_prompt(incident: dict[str, Any], guidance: str, scratchpad: list[dict[str, Any]]) -> str:
+    parts = [_incident_brief(incident)]
+    if guidance:
+        parts.append(f"\nFocus this investigation on: {guidance}")
+    if scratchpad:
+        steps = "\n".join(
+            f"- {s['action']}({s['action_input']}) -> {s['observation']}" for s in scratchpad
+        )
+        parts.append(f"\nSteps so far:\n{steps}")
+    return "\n".join(parts)
 
 
 def make_synthesize(model: Any) -> Node:

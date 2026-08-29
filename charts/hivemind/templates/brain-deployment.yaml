@@ -47,6 +47,8 @@ spec:
               value: {{ .Values.brain.memoryEnabled | quote }}
             - name: HIVEMIND_MEMORY_K
               value: {{ .Values.brain.memoryK | quote }}
+            - name: HIVEMIND_GATHER_MODE
+              value: {{ .Values.brain.gatherMode | quote }}
             {{- if .Values.llmApiKey }}
             # Reuses the same Groq key as the operator (values.llmApiKey).
             - name: GROQ_API_KEY

@@ -5,7 +5,7 @@ image:
 
 # To use Groq instead of a local Ollama:
 #   ollamaURL: https://api.groq.com/openai/v1
-#   ollamaModel: llama-3.1-70b-versatile
+#   ollamaModel: openai/gpt-oss-20b
 #   llmApiKey: <your-groq-key>
 ollamaURL: http://ollama:11434
 ollamaModel: llama3.2
@@ -31,10 +31,13 @@ brain:
   # auto = Groq when a key is present (reuses llmApiKey above), else the
   # deterministic mock. Force with "groq" or "mock".
   provider: auto
-  groqModel: llama-3.3-70b-versatile
+  groqModel: openai/gpt-oss-20b
   port: 8090
   maxIterations: 3
   confidenceThreshold: "0.75"
+  # Evidence gathering: "summary" (one LLM pass) or "react" (a tool-choosing
+  # agent that investigates the evidence bundle over several steps).
+  gatherMode: summary
   # Incident memory: recall similar past incidents to prime synthesis and
   # remember finalized ones. In-memory + single-replica (like the approval
   # checkpointer); disable with memoryEnabled: false.
