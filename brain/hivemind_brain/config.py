@@ -26,7 +26,7 @@ class Settings:
     # otherwise falls back to the deterministic mock so the graph always runs.
     provider: str = "auto"
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-20b"
     request_timeout_s: float = 30.0
 
     # Reflection-loop defaults (overridable per-request).
@@ -56,7 +56,7 @@ class Settings:
         return cls(
             provider=os.getenv("HIVEMIND_LLM_PROVIDER", "auto").strip().lower(),
             groq_api_key=os.getenv("GROQ_API_KEY") or None,
-            groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
             request_timeout_s=float(os.getenv("HIVEMIND_LLM_TIMEOUT_S", "30")),
             max_iterations=int(os.getenv("HIVEMIND_MAX_ITERATIONS", "3")),
             confidence_threshold=float(
