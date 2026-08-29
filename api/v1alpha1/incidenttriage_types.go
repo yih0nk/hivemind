@@ -32,14 +32,17 @@ const (
 )
 
 // TriagePhase tracks where the triage run is in its lifecycle.
-// +kubebuilder:validation:Enum=Pending;Triaging;Remediated;Failed
+// +kubebuilder:validation:Enum=Pending;Triaging;AwaitingApproval;Remediated;Failed
 type TriagePhase string
 
 const (
-	PhasePending    TriagePhase = "Pending"
-	PhaseTriaging   TriagePhase = "Triaging"
-	PhaseRemediated TriagePhase = "Remediated"
-	PhaseFailed     TriagePhase = "Failed"
+	PhasePending  TriagePhase = "Pending"
+	PhaseTriaging TriagePhase = "Triaging"
+	// PhaseAwaitingApproval means the reasoner paused for a human decision;
+	// the run resumes when an approval annotation is applied to the CR.
+	PhaseAwaitingApproval TriagePhase = "AwaitingApproval"
+	PhaseRemediated       TriagePhase = "Remediated"
+	PhaseFailed           TriagePhase = "Failed"
 )
 
 // IncidentTriageSpec is the user's request: what fired and where to look.
@@ -73,6 +76,12 @@ type IncidentTriageSpec struct {
 	// "hivemind-runbooks" when empty.
 	// +optional
 	RunbookConfigMap string `json:"runbookConfigMap,omitempty"`
+
+	// requireApproval pauses the run for a human decision before the report
+	// is finalized and any PR is opened. Requires the external reasoning brain
+	// (HIVEMIND_REASONER_URL); the in-process synthesizer cannot pause.
+	// +optional
+	RequireApproval bool `json:"requireApproval,omitempty"`
 }
 
 // IncidentTriageStatus is what the operator observed and produced.
@@ -88,6 +97,16 @@ type IncidentTriageStatus struct {
 	// prURL links to the root-cause report PR once opened.
 	// +optional
 	PRURL string `json:"prURL,omitempty"`
+
+	// reasonerThreadID identifies a reasoning run paused at the approval gate,
+	// used to resume it once a human decides. Set only while AwaitingApproval.
+	// +optional
+	ReasonerThreadID string `json:"reasonerThreadID,omitempty"`
+
+	// pendingProposal is a human-readable summary of the root cause/fix awaiting
+	// approval, so a reviewer can see what they are approving via the CR.
+	// +optional
+	PendingProposal string `json:"pendingProposal,omitempty"`
 
 	// startTime is when agent dispatch began.
 	// +optional

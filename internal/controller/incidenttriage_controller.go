@@ -129,6 +129,9 @@ func (r *IncidentTriageReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	case incidentsv1alpha1.PhaseTriaging:
 		return r.reconcileTriaging(ctx, &triage)
 
+	case incidentsv1alpha1.PhaseAwaitingApproval:
+		return r.reconcileApproval(ctx, &triage)
+
 	case incidentsv1alpha1.PhaseRemediated:
 		if triage.Status.CompletionTime == nil {
 			if err := r.patchStatus(ctx, &triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
@@ -197,11 +200,25 @@ func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage
 			timeout = agents.DefaultAgentTimeout
 		}
 		synthCtx, cancel := context.WithTimeout(ctx, timeout)
-		report, err := r.Reasoner.Synthesize(synthCtx, triage)
+		result, err := r.Reasoner.Synthesize(synthCtx, triage)
 		cancel()
 		if err == nil {
+			// The reasoner paused for a human: park the run in
+			// AwaitingApproval and surface the proposal + thread id.
+			if result.Status == reasoner.StatusAwaitingApproval {
+				r.emitEvent(triage, corev1.EventTypeNormal, "ApprovalRequired",
+					fmt.Sprintf("triage for alert %q awaiting human approval", triage.Spec.AlertName))
+				log.Info("triage awaiting approval", "alert", triage.Spec.AlertName,
+					"thread", result.ThreadID)
+				return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+					s.Phase = incidentsv1alpha1.PhaseAwaitingApproval
+					s.ReasonerThreadID = result.ThreadID
+					s.PendingProposal = result.Proposal
+					s.Message = "awaiting approval: annotate " + approvalAnnotation + "=approve|reject"
+				})
+			}
 			return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
-				s.AgentOutputs[r.Reasoner.Name()] = report
+				s.AgentOutputs[r.Reasoner.Name()] = result.Report
 				s.Message = "synthesis complete; publishing report"
 			})
 		}
@@ -239,6 +256,71 @@ func (r *IncidentTriageReconciler) reconcileTriaging(ctx context.Context, triage
 		s.PRURL = url
 		s.Phase = NextPhase(incidentsv1alpha1.PhaseTriaging)
 		s.Message = message
+	})
+}
+
+// Approval annotations a human sets to decide a paused triage. Applying either
+// value updates the CR, which re-enqueues it into reconcileApproval.
+const (
+	approvalAnnotation     = "hivemind.io/approval"      // "approve" | "reject"
+	approvalNoteAnnotation = "hivemind.io/approval-note" // optional reviewer note
+)
+
+// reconcileApproval handles a run paused at the approval gate. It waits (does
+// nothing) until a human sets the approval annotation, then resumes the reasoner
+// with that decision: approve re-enters Triaging to publish the PR, reject ends
+// the run Remediated with no PR. The resumed report is persisted either way, so
+// a rejected proposal is still recorded.
+func (r *IncidentTriageReconciler) reconcileApproval(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	decision := triage.Annotations[approvalAnnotation]
+	if decision != "approve" && decision != "reject" {
+		// No decision yet: wait. Annotating the CR re-enqueues it here.
+		return ctrl.Result{}, nil
+	}
+	approve := decision == "approve"
+
+	timeout := r.AgentTimeout
+	if timeout <= 0 {
+		timeout = agents.DefaultAgentTimeout
+	}
+	resumeCtx, cancel := context.WithTimeout(ctx, timeout)
+	result, err := r.Reasoner.Resume(
+		resumeCtx, triage.Status.ReasonerThreadID, approve, triage.Annotations[approvalNoteAnnotation])
+	cancel()
+	if err != nil {
+		log.Error(err, "resuming reasoner after approval failed", "alert", triage.Spec.AlertName)
+		return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+			s.Phase = incidentsv1alpha1.PhaseFailed
+			s.Message = fmt.Sprintf("resuming after approval failed: %v", err)
+		})
+	}
+
+	if !approve {
+		r.emitEvent(triage, corev1.EventTypeNormal, "TriageRejected",
+			fmt.Sprintf("human rejected the proposed fix for alert %q; no PR opened", triage.Spec.AlertName))
+		log.Info("triage rejected by human", "alert", triage.Spec.AlertName)
+		return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+			s.AgentOutputs[r.Reasoner.Name()] = result.Report
+			s.ReasonerThreadID = ""
+			s.PendingProposal = ""
+			s.Phase = incidentsv1alpha1.PhaseRemediated
+			s.Message = "rejected by human; no PR opened"
+		})
+	}
+
+	r.emitEvent(triage, corev1.EventTypeNormal, "TriageApproved",
+		fmt.Sprintf("human approved the proposed fix for alert %q", triage.Spec.AlertName))
+	log.Info("triage approved by human", "alert", triage.Spec.AlertName)
+	// Re-enter Triaging with the synthesizer output now persisted, so the next
+	// pass opens the PR.
+	return ctrl.Result{}, r.patchStatus(ctx, triage, func(s *incidentsv1alpha1.IncidentTriageStatus) {
+		s.AgentOutputs[r.Reasoner.Name()] = result.Report
+		s.ReasonerThreadID = ""
+		s.PendingProposal = ""
+		s.Phase = incidentsv1alpha1.PhaseTriaging
+		s.Message = "approved; publishing report"
 	})
 }
 

@@ -110,6 +110,34 @@ func TestOpenIncidentPR(t *testing.T) {
 	}
 }
 
+func TestOpenIncidentPRNotesHumanApproval(t *testing.T) {
+	fake := &FakePRClient{PRURL: "https://github.com/yihan/incident-reports/pull/8"}
+	triage := incidentFixture(fullOutputs())
+	triage.Spec.RequireApproval = true
+
+	if _, err := OpenIncidentPR(t.Context(), fake, testRepo, triage); err != nil {
+		t.Fatalf("OpenIncidentPR() unexpected error: %v", err)
+	}
+
+	body := fake.PRs()[0].Body
+	if !strings.Contains(body, "approved by a human") {
+		t.Errorf("body should note human approval:\n%s", body)
+	}
+}
+
+func TestOpenIncidentPROmitsApprovalNoteWhenNotGated(t *testing.T) {
+	fake := &FakePRClient{PRURL: "https://github.com/yihan/incident-reports/pull/9"}
+	triage := incidentFixture(fullOutputs()) // RequireApproval defaults false
+
+	if _, err := OpenIncidentPR(t.Context(), fake, testRepo, triage); err != nil {
+		t.Fatalf("OpenIncidentPR() unexpected error: %v", err)
+	}
+
+	if body := fake.PRs()[0].Body; strings.Contains(body, "approved by a human") {
+		t.Errorf("ungated report should not claim human approval:\n%s", body)
+	}
+}
+
 func TestOpenIncidentPRPartialOutputs(t *testing.T) {
 	fake := &FakePRClient{PRURL: "https://github.com/yihan/incident-reports/pull/8"}
 	outputs := fullOutputs()

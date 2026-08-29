@@ -68,20 +68,37 @@ type brainRunbook struct {
 }
 
 type brainRequest struct {
-	Alert     string         `json:"alert"`
-	Namespace string         `json:"namespace"`
-	Pod       string         `json:"pod"`
-	Logs      string         `json:"logs"`
-	Metrics   string         `json:"metrics"`
-	Runbooks  []brainRunbook `json:"runbooks"`
+	Alert           string         `json:"alert"`
+	Namespace       string         `json:"namespace"`
+	Pod             string         `json:"pod"`
+	Logs            string         `json:"logs"`
+	Metrics         string         `json:"metrics"`
+	Runbooks        []brainRunbook `json:"runbooks"`
+	RequireApproval bool           `json:"require_approval"`
 }
 
-type brainResponse struct {
+type brainResumeRequest struct {
+	ThreadID string `json:"thread_id"`
+	Action   string `json:"action"`
+	Note     string `json:"note"`
+}
+
+type brainApprovalRequest struct {
 	RootCause   string  `json:"root_cause"`
 	ProposedFix string  `json:"proposed_fix"`
 	Confidence  float64 `json:"confidence"`
 	Iterations  int     `json:"iterations"`
-	Critique    string  `json:"critique"`
+}
+
+type brainResponse struct {
+	Status          string                `json:"status"`
+	ThreadID        string                `json:"thread_id"`
+	ApprovalRequest *brainApprovalRequest `json:"approval_request"`
+	RootCause       string                `json:"root_cause"`
+	ProposedFix     string                `json:"proposed_fix"`
+	Confidence      float64               `json:"confidence"`
+	Iterations      int                   `json:"iterations"`
+	Critique        string                `json:"critique"`
 }
 
 // synthesisReport is the JSON shape stored in status.agentOutputs and
@@ -98,21 +115,47 @@ type synthesisReport struct {
 	Reflection      string  `json:"reflection,omitempty"`
 }
 
-// Synthesize POSTs the gathered evidence to the brain's /triage endpoint
-// and maps the reflection result into the synthesizer report schema. A
-// non-2xx response or transport error is returned as an error; the
-// controller already tolerates a failed synthesis by publishing a partial
-// report, so a brain outage degrades gracefully rather than sinking triage.
-func (h *HTTPReasoner) Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (string, error) {
-	reqBody, err := json.Marshal(h.buildRequest(triage))
+// Synthesize POSTs the gathered evidence to the brain's /triage endpoint and
+// maps the result into a Result. When triage.Spec.RequireApproval is set and the
+// brain pauses, the Result is StatusAwaitingApproval with a thread id to resume
+// with. A non-2xx response or transport error is returned as an error; the
+// controller tolerates a failed synthesis by publishing a partial report, so a
+// brain outage degrades gracefully rather than sinking triage.
+func (h *HTTPReasoner) Synthesize(ctx context.Context, triage *incidentsv1alpha1.IncidentTriage) (Result, error) {
+	body, err := h.postJSON(ctx, "/triage", h.buildRequest(triage))
 	if err != nil {
-		return "", fmt.Errorf("marshaling brain request: %w", err)
+		return Result{}, err
 	}
+	return decodeResult(body, triage.Spec.Severity)
+}
 
-	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodPost, h.BaseURL+"/triage", bytes.NewReader(reqBody))
+// Resume continues a run paused at the approval gate by POSTing the human
+// decision to the brain's /resume endpoint.
+func (h *HTTPReasoner) Resume(ctx context.Context, threadID string, approve bool, note string) (Result, error) {
+	action := "reject"
+	if approve {
+		action = "approve"
+	}
+	body, err := h.postJSON(ctx, "/resume",
+		brainResumeRequest{ThreadID: threadID, Action: action, Note: note})
 	if err != nil {
-		return "", fmt.Errorf("building brain request: %w", err)
+		return Result{}, err
+	}
+	// Severity is not echoed on resume; the PR header still carries it from spec.
+	return decodeResult(body, "")
+}
+
+// postJSON marshals payload, POSTs it to path under BaseURL, and returns the
+// response body, erroring on transport failure or a non-2xx status.
+func (h *HTTPReasoner) postJSON(ctx context.Context, path string, payload any) ([]byte, error) {
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling brain request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(
+		ctx, http.MethodPost, h.BaseURL+path, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("building brain request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -122,36 +165,57 @@ func (h *HTTPReasoner) Synthesize(ctx context.Context, triage *incidentsv1alpha1
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return "", fmt.Errorf("calling brain: %w", err)
+		return nil, fmt.Errorf("calling brain: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("reading brain response: %w", err)
+		return nil, fmt.Errorf("reading brain response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("brain returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("brain returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+	return body, nil
+}
 
+// decodeResult maps a brain response into a Result. An awaiting-approval
+// response yields the thread id and a human-readable proposal; anything else is
+// treated as completed and mapped into the synthesizer report schema (an empty
+// status, e.g. from an older brain, counts as completed).
+func decodeResult(body []byte, severity incidentsv1alpha1.Severity) (Result, error) {
 	var br brainResponse
 	if err := json.Unmarshal(body, &br); err != nil {
-		return "", fmt.Errorf("decoding brain response: %w", err)
+		return Result{}, fmt.Errorf("decoding brain response: %w", err)
+	}
+
+	if br.Status == StatusAwaitingApproval {
+		proposal := ""
+		if ar := br.ApprovalRequest; ar != nil {
+			proposal = fmt.Sprintf(
+				"Root cause: %s\nProposed fix: %s\n(confidence %.2f, %d iterations)",
+				ar.RootCause, ar.ProposedFix, ar.Confidence, ar.Iterations)
+		}
+		return Result{
+			Status:   StatusAwaitingApproval,
+			ThreadID: br.ThreadID,
+			Proposal: proposal,
+		}, nil
 	}
 
 	report, err := json.Marshal(synthesisReport{
 		RootCause:       br.RootCause,
 		RecommendedFix:  br.ProposedFix,
 		Confidence:      br.Confidence,
-		Severity:        string(triage.Spec.Severity),
+		Severity:        string(severity),
 		EstimatedImpact: "",
 		Iterations:      br.Iterations,
 		Reflection:      br.Critique,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshaling synthesis report: %w", err)
+		return Result{}, fmt.Errorf("marshaling synthesis report: %w", err)
 	}
-	return string(report), nil
+	return Result{Status: StatusCompleted, Report: string(report)}, nil
 }
 
 // buildRequest maps the CR spec and the upstream agents' persisted outputs
@@ -161,10 +225,11 @@ func (h *HTTPReasoner) Synthesize(ctx context.Context, triage *incidentsv1alpha1
 func (h *HTTPReasoner) buildRequest(triage *incidentsv1alpha1.IncidentTriage) brainRequest {
 	outputs := triage.Status.AgentOutputs
 	req := brainRequest{
-		Alert:     triage.Spec.AlertName,
-		Namespace: triage.Spec.AffectedNamespace,
-		Logs:      outputs["logtriage"],
-		Metrics:   outputs["metricscorrelator"],
+		Alert:           triage.Spec.AlertName,
+		Namespace:       triage.Spec.AffectedNamespace,
+		Logs:            outputs["logtriage"],
+		Metrics:         outputs["metricscorrelator"],
+		RequireApproval: triage.Spec.RequireApproval,
 	}
 	if rb := outputs["runbooklookup"]; rb != "" {
 		req.Runbooks = []brainRunbook{{Name: "runbook-lookup", Content: rb}}

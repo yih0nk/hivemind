@@ -50,6 +50,29 @@ func (s stubAgent) Run(context.Context, *incidentsv1alpha1.IncidentTriage) (stri
 	return s.output, s.err
 }
 
+// stubReasoner drives the approval-gate paths: Synthesize pauses, Resume
+// completes. It records the last resume decision for assertions.
+type stubReasoner struct {
+	resumed *bool
+}
+
+func (s stubReasoner) Name() string { return reasoner.SynthesizerKey }
+
+func (s stubReasoner) Synthesize(context.Context, *incidentsv1alpha1.IncidentTriage) (reasoner.Result, error) {
+	return reasoner.Result{
+		Status:   reasoner.StatusAwaitingApproval,
+		ThreadID: "thread-1",
+		Proposal: "root cause: stub",
+	}, nil
+}
+
+func (s stubReasoner) Resume(_ context.Context, _ string, approve bool, _ string) (reasoner.Result, error) {
+	if s.resumed != nil {
+		*s.resumed = approve
+	}
+	return reasoner.Result{Status: reasoner.StatusCompleted, Report: `{"rootCause":"resumed"}`}, nil
+}
+
 var _ = Describe("IncidentTriage Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
@@ -159,6 +182,64 @@ var _ = Describe("IncidentTriage Controller", func() {
 			Expect(updated.Status.AgentOutputs).To(HaveKey("logtriage"))
 			Expect(updated.Status.AgentOutputs).NotTo(HaveKey("synthesizer"))
 			Expect(updated.Status.PRURL).To(Equal("https://github.com/acme/runbooks/pull/1"))
+		})
+
+		reconcileN := func(n int) {
+			for range n {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+		}
+
+		annotate := func(key, value string) {
+			cur := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, cur)).To(Succeed())
+			cur.Annotations = map[string]string{key: value}
+			Expect(k8sClient.Update(ctx, cur)).To(Succeed())
+		}
+
+		It("should pause at AwaitingApproval, then open a PR once approved", func() {
+			controllerReconciler.Reasoner = stubReasoner{}
+
+			// finalizer -> Pending -> Triaging(evidence) -> Triaging(synth pauses)
+			reconcileN(6)
+			paused := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, paused)).To(Succeed())
+			Expect(paused.Status.Phase).To(Equal(incidentsv1alpha1.PhaseAwaitingApproval))
+			Expect(paused.Status.ReasonerThreadID).To(Equal("thread-1"))
+			Expect(paused.Status.PendingProposal).To(ContainSubstring("stub"))
+			Expect(paused.Status.PRURL).To(BeEmpty())
+
+			annotate(approvalAnnotation, "approve")
+			reconcileN(6)
+
+			done := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, done)).To(Succeed())
+			Expect(done.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
+			Expect(done.Status.AgentOutputs).To(HaveKeyWithValue("synthesizer", `{"rootCause":"resumed"}`))
+			Expect(done.Status.PRURL).To(Equal("https://github.com/acme/runbooks/pull/1"))
+			Expect(done.Status.ReasonerThreadID).To(BeEmpty())
+		})
+
+		It("should end without a PR when the proposal is rejected", func() {
+			rejected := true // will be overwritten by Resume's approve flag
+			controllerReconciler.Reasoner = stubReasoner{resumed: &rejected}
+
+			reconcileN(6)
+			paused := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, paused)).To(Succeed())
+			Expect(paused.Status.Phase).To(Equal(incidentsv1alpha1.PhaseAwaitingApproval))
+
+			annotate(approvalAnnotation, "reject")
+			reconcileN(4)
+
+			done := &incidentsv1alpha1.IncidentTriage{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, done)).To(Succeed())
+			Expect(done.Status.Phase).To(Equal(incidentsv1alpha1.PhaseRemediated))
+			Expect(rejected).To(BeFalse()) // Resume was called with approve=false
+			Expect(done.Status.PRURL).To(BeEmpty())
 		})
 	})
 })

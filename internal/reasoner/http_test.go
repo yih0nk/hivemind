@@ -74,6 +74,9 @@ func TestHTTPReasoner_Synthesize_MapsResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Synthesize returned error: %v", err)
 	}
+	if out.Status != StatusCompleted {
+		t.Errorf("status = %q, want completed", out.Status)
+	}
 
 	// The evidence the operator already gathered must reach the brain.
 	if !strings.Contains(gotBody.Logs, "OOMKilled") {
@@ -85,10 +88,13 @@ func TestHTTPReasoner_Synthesize_MapsResponse(t *testing.T) {
 	if len(gotBody.Runbooks) != 1 {
 		t.Errorf("runbook evidence not forwarded: %+v", gotBody.Runbooks)
 	}
+	if gotBody.RequireApproval {
+		t.Errorf("require_approval should default false")
+	}
 
 	// The response must map into the synthesizer schema the PR renderer expects.
 	var report synthesisReport
-	if err := json.Unmarshal([]byte(out), &report); err != nil {
+	if err := json.Unmarshal([]byte(out.Report), &report); err != nil {
 		t.Fatalf("output is not a synthesisReport: %v", err)
 	}
 	if report.RootCause != "container OOMKilled under load" {
@@ -134,5 +140,105 @@ func TestHTTPReasoner_BuildRequest_OmitsEmptyRunbooks(t *testing.T) {
 	req := NewHTTPReasoner("http://x", 0).buildRequest(tr)
 	if len(req.Runbooks) != 0 {
 		t.Errorf("expected no runbooks when lookup output is absent, got %+v", req.Runbooks)
+	}
+}
+
+func TestHTTPReasoner_Synthesize_AwaitingApproval(t *testing.T) {
+	var gotBody brainRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "awaiting_approval",
+			"thread_id": "thread-123",
+			"approval_request": {
+				"root_cause": "OOMKilled under load",
+				"proposed_fix": "raise memory limit",
+				"confidence": 0.8,
+				"iterations": 1
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	tr := testTriage()
+	tr.Spec.RequireApproval = true
+	out, err := NewHTTPReasoner(srv.URL, 0).Synthesize(context.Background(), tr)
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+	if !gotBody.RequireApproval {
+		t.Error("require_approval should be forwarded to the brain")
+	}
+	if out.Status != StatusAwaitingApproval {
+		t.Errorf("status = %q, want awaiting_approval", out.Status)
+	}
+	if out.ThreadID != "thread-123" {
+		t.Errorf("thread_id = %q", out.ThreadID)
+	}
+	if out.Report != "" {
+		t.Errorf("no report should be set while awaiting approval, got %q", out.Report)
+	}
+	if !strings.Contains(out.Proposal, "OOMKilled under load") {
+		t.Errorf("proposal should summarize the root cause, got %q", out.Proposal)
+	}
+}
+
+func TestHTTPReasoner_Resume_Approve(t *testing.T) {
+	var gotBody brainResumeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/resume" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "completed",
+			"root_cause": "confirmed OOM",
+			"proposed_fix": "raise limit",
+			"confidence": 0.9,
+			"iterations": 2
+		}`))
+	}))
+	defer srv.Close()
+
+	out, err := NewHTTPReasoner(srv.URL, 0).Resume(
+		context.Background(), "thread-123", true, "lgtm")
+	if err != nil {
+		t.Fatalf("Resume returned error: %v", err)
+	}
+	if gotBody.ThreadID != "thread-123" || gotBody.Action != "approve" || gotBody.Note != "lgtm" {
+		t.Errorf("resume request not forwarded correctly: %+v", gotBody)
+	}
+	if out.Status != StatusCompleted {
+		t.Errorf("status = %q, want completed", out.Status)
+	}
+	var report synthesisReport
+	if err := json.Unmarshal([]byte(out.Report), &report); err != nil {
+		t.Fatalf("resume output is not a synthesisReport: %v", err)
+	}
+	if report.RootCause != "confirmed OOM" {
+		t.Errorf("rootCause = %q", report.RootCause)
+	}
+}
+
+func TestHTTPReasoner_Resume_RejectSendsRejectAction(t *testing.T) {
+	var gotBody brainResumeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status": "completed", "root_cause": "x"}`))
+	}))
+	defer srv.Close()
+
+	_, err := NewHTTPReasoner(srv.URL, 0).Resume(context.Background(), "t", false, "")
+	if err != nil {
+		t.Fatalf("Resume returned error: %v", err)
+	}
+	if gotBody.Action != "reject" {
+		t.Errorf("action = %q, want reject", gotBody.Action)
 	}
 }

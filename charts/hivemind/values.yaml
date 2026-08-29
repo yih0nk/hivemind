@@ -43,6 +43,11 @@ brain:
       cpu: "1"
       memory: 512Mi
 
+# Pause every alert-driven triage for a human decision before any PR is opened.
+# Requires the brain (brain.enabled); approve/reject a paused CR with
+#   kubectl annotate incidenttriage <name> hivemind.io/approval=approve
+requireApproval: false
+
 # Leave empty to run with the fake PR client: triage completes and the
 # report stays in status.agentOutputs, but no GitHub PR is opened.
 githubToken: ""

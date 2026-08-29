@@ -78,6 +78,12 @@ func reportBody(triage *incidentsv1alpha1.IncidentTriage) string {
 		triage.Spec.AlertName, triage.Spec.Severity, triage.Spec.AffectedNamespace)
 	fmt.Fprintf(&b, "Started: %s\n", started)
 
+	// A PR only opens after an approval gate is passed, so its presence here
+	// means a human reviewed and approved this report before it was published.
+	if triage.Spec.RequireApproval {
+		fmt.Fprintf(&b, "\n> ✅ Reviewed and approved by a human before publishing.\n")
+	}
+
 	for _, s := range reportSections {
 		fmt.Fprintf(&b, "\n## %s\n%s\n", s.heading, renderOutput(triage.Status.AgentOutputs[s.key]))
 	}
