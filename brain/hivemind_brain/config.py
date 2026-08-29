@@ -33,6 +33,11 @@ class Settings:
     max_iterations: int = 3
     confidence_threshold: float = 0.75
 
+    # Evidence gathering: "summary" (one LLM pass) or "react" (a tool-choosing
+    # agent that investigates the evidence bundle over several steps).
+    gather_mode: str = "summary"
+    react_max_steps: int = 4
+
     # Incident memory: recall similar past incidents to prime synthesis, and
     # remember finalized ones for next time.
     memory_enabled: bool = True
@@ -60,4 +65,6 @@ class Settings:
             memory_enabled=_get_bool("HIVEMIND_MEMORY_ENABLED", True),
             memory_k=int(os.getenv("HIVEMIND_MEMORY_K", "3")),
             memory_dim=int(os.getenv("HIVEMIND_MEMORY_DIM", "256")),
+            gather_mode=os.getenv("HIVEMIND_GATHER_MODE", "summary").strip().lower(),
+            react_max_steps=int(os.getenv("HIVEMIND_REACT_MAX_STEPS", "4")),
         )

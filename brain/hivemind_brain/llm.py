@@ -31,9 +31,37 @@ class MockChatModel:
 
     def __init__(self) -> None:
         self._critique_calls = 0
+        self._react_calls = 0
 
     def invoke(self, messages: list[BaseMessage]) -> AIMessage:
         text = "\n".join(str(m.content) for m in messages).lower()
+
+        if "task: react_gather" in text:
+            # First step: call a tool. Then finish with distilled evidence.
+            self._react_calls += 1
+            if self._react_calls == 1:
+                return AIMessage(
+                    content=json.dumps(
+                        {
+                            "thought": "Check the logs for the failure signature.",
+                            "action": "search_logs",
+                            "action_input": "OOMKilled",
+                        }
+                    )
+                )
+            return AIMessage(
+                content=json.dumps(
+                    {
+                        "thought": "Enough evidence gathered.",
+                        "done": True,
+                        "evidence": {
+                            "logs": "Repeated OOMKilled events preceding each restart.",
+                            "metrics": "Memory usage climbs to the limit before each kill.",
+                            "runbooks": "OOMKill runbook: raise limits / find the leak.",
+                        },
+                    }
+                )
+            )
 
         if "task: critique" in text:
             self._critique_calls += 1
