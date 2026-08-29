@@ -20,6 +20,7 @@ class TriageState(TypedDict, total=False):
     require_approval: bool  # pause for a human decision before finalizing
 
     # --- Working state (mutated by nodes across the loop) ---
+    similar_incidents: list[str]  # past-incident summaries recalled from memory
     evidence: dict[str, Any]  # per-source summaries produced by `gather`
     hypothesis: dict[str, Any]  # {root_cause, proposed_fix} from `synthesize`
     confidence: float  # 0..1 from `critique`

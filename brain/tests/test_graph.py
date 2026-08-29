@@ -8,6 +8,7 @@ from langgraph.types import Command
 
 from hivemind_brain.config import Settings
 from hivemind_brain.graph import build_graph, initial_state
+from hivemind_brain.memory import IncidentMemory
 from hivemind_brain.llm import MockChatModel, _first_json
 from hivemind_brain.nodes import route_after_critique
 
@@ -123,3 +124,58 @@ def test_non_gated_run_never_interrupts():
     )
     assert "__interrupt__" not in final
     assert final["report"]["approved"] is True
+
+
+# --- incident memory ---
+
+
+def test_recall_primes_synthesis_and_run_remembers():
+    settings = _settings()
+    memory = IncidentMemory(k=3)
+    memory.remember("Alert: OOMKilled\nRoot cause: memory limit too low\nFix: raise it")
+    graph = build_graph(settings, model=MockChatModel(), memory=memory)
+
+    final = graph.invoke(initial_state(INCIDENT, settings), _cfg())
+
+    # recall found the seeded incident and surfaced it into state...
+    assert final["similar_incidents"]
+    recall_runs = [h for h in final["history"] if h.get("node") == "recall"]
+    assert recall_runs and recall_runs[0]["recalled"] >= 1
+    # ...and this run was remembered for next time.
+    assert memory.size() == 2
+    assert any(h.get("node") == "remember" and h.get("stored") for h in final["history"])
+
+
+def test_memory_learns_across_runs():
+    settings = _settings()
+    memory = IncidentMemory(k=3)  # starts empty
+    graph = build_graph(settings, model=MockChatModel(), memory=memory)
+
+    first = graph.invoke(initial_state(INCIDENT, settings), _cfg())
+    assert first["similar_incidents"] == []  # nothing to recall yet
+
+    second = graph.invoke(initial_state(INCIDENT, settings), _cfg())
+    assert second["similar_incidents"]  # the first run is now recalled
+
+
+def test_memory_disabled_skips_recall_and_remember():
+    settings = _settings()
+    graph = build_graph(settings, model=MockChatModel(), memory=None)
+    final = graph.invoke(initial_state(INCIDENT, settings), _cfg())
+
+    nodes = {h.get("node") for h in final["history"]}
+    assert "recall" not in nodes
+    assert "remember" not in nodes
+    assert final["report"]["root_cause"]  # still produces a report
+
+
+def test_rejected_proposal_is_not_remembered():
+    settings = _settings()
+    memory = IncidentMemory(k=3)
+    graph = build_graph(settings, model=MockChatModel(), memory=memory)
+    cfg = _cfg()
+
+    graph.invoke(initial_state(INCIDENT, settings, require_approval=True), cfg)
+    graph.invoke(Command(resume={"action": "reject", "note": "no"}), cfg)
+
+    assert memory.size() == 0  # a rejected fix must not pollute memory

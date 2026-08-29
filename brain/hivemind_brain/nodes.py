@@ -62,16 +62,25 @@ def make_gather(model: Any) -> Node:
 
 
 def make_synthesize(model: Any) -> Node:
-    """Combine the evidence summaries into a single root-cause hypothesis."""
+    """Combine the evidence summaries into a single root-cause hypothesis.
+
+    Similar past incidents recalled from memory (if any) are included as
+    reference so recurring failure modes converge on what worked before.
+    """
 
     def synthesize(state: TriageState) -> dict[str, Any]:
         evidence = state.get("evidence", {})
+        similar = state.get("similar_incidents", [])
         system = (
             "TASK: synthesize. You are a staff SRE. From the evidence summaries, "
             "produce one root-cause hypothesis and a concrete proposed fix. "
+            "If similar past incidents are provided, use them as prior knowledge "
+            "but do not assume this incident is identical. "
             'Respond as JSON with keys "root_cause" and "proposed_fix".'
         )
         user = json.dumps(evidence, indent=2, sort_keys=True)
+        if similar:
+            user += "\n\nSimilar past incidents (reference):\n" + "\n---\n".join(similar)
         hypothesis = call_json(model, system, user)
         return {
             "hypothesis": hypothesis,
@@ -79,6 +88,46 @@ def make_synthesize(model: Any) -> Node:
         }
 
     return synthesize
+
+
+def make_recall(memory: Any) -> Node:
+    """Recall past incidents similar to this one, to prime synthesis."""
+
+    def recall(state: TriageState) -> dict[str, Any]:
+        incident = state.get("incident", {})
+        query = " ".join(
+            str(incident.get(k, "")) for k in ("alert", "logs", "metrics")
+        )
+        similar = memory.recall(query)
+        return {
+            "similar_incidents": similar,
+            "history": [{"node": "recall", "recalled": len(similar)}],
+        }
+
+    return recall
+
+
+def make_remember(memory: Any) -> Node:
+    """Store this finalized incident so future triage can recall it.
+
+    Rejected proposals are not stored -- memory should reflect fixes a human
+    was willing to stand behind, not ones they turned down.
+    """
+
+    def remember(state: TriageState) -> dict[str, Any]:
+        report = state.get("report", {})
+        if not report.get("approved", True):
+            return {"history": [{"node": "remember", "stored": False, "reason": "rejected"}]}
+        incident = state.get("incident", {})
+        summary = (
+            f"Alert: {incident.get('alert', '')}\n"
+            f"Root cause: {report.get('root_cause', '')}\n"
+            f"Fix: {report.get('proposed_fix', '')}"
+        )
+        memory.remember(summary, metadata={"alert": incident.get("alert", "")})
+        return {"history": [{"node": "remember", "stored": True}]}
+
+    return remember
 
 
 def make_critique(model: Any) -> Node:

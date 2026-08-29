@@ -33,6 +33,12 @@ class Settings:
     max_iterations: int = 3
     confidence_threshold: float = 0.75
 
+    # Incident memory: recall similar past incidents to prime synthesis, and
+    # remember finalized ones for next time.
+    memory_enabled: bool = True
+    memory_k: int = 3
+    memory_dim: int = 256
+
     @property
     def resolved_provider(self) -> str:
         """Concrete provider after resolving "auto"."""
@@ -51,4 +57,7 @@ class Settings:
             confidence_threshold=float(
                 os.getenv("HIVEMIND_CONFIDENCE_THRESHOLD", "0.75")
             ),
+            memory_enabled=_get_bool("HIVEMIND_MEMORY_ENABLED", True),
+            memory_k=int(os.getenv("HIVEMIND_MEMORY_K", "3")),
+            memory_dim=int(os.getenv("HIVEMIND_MEMORY_DIM", "256")),
         )

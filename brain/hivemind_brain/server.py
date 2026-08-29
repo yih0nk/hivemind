@@ -17,7 +17,7 @@ from langgraph.types import Command
 
 from . import __version__
 from .config import Settings
-from .graph import build_graph, initial_state
+from .graph import build_graph, default_memory, initial_state
 from .models import ResumeRequest, TriageRequest, TriageResponse
 
 # Load a local .env if present (dev convenience). No-op when python-dotenv is
@@ -32,15 +32,22 @@ except ImportError:  # pragma: no cover
 app = FastAPI(title="Hivemind Brain", version=__version__)
 
 _settings = Settings.from_env()
-_graph = build_graph(_settings)
+# Build the memory here (not inside build_graph) so /healthz can report its size;
+# the graph shares this instance and accumulates across requests.
+_memory = default_memory(_settings)
+_graph = build_graph(_settings, memory=_memory)
 
 
 @app.get("/healthz")
-def healthz() -> dict[str, str]:
+def healthz() -> dict[str, object]:
     return {
         "status": "ok",
         "version": __version__,
         "provider": _settings.resolved_provider,
+        "memory": {
+            "enabled": _memory is not None,
+            "size": _memory.size() if _memory is not None else 0,
+        },
     }
 
 

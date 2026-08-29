@@ -35,6 +35,11 @@ brain:
   port: 8090
   maxIterations: 3
   confidenceThreshold: "0.75"
+  # Incident memory: recall similar past incidents to prime synthesis and
+  # remember finalized ones. In-memory + single-replica (like the approval
+  # checkpointer); disable with memoryEnabled: false.
+  memoryEnabled: true
+  memoryK: 3
   resources:
     requests:
       cpu: 100m

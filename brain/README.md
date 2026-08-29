@@ -16,21 +16,25 @@ rather than the operator's `errgroup` fan-out — a fixed DAG can't express the
 ## The graph
 
 ```
-START → gather → synthesize → critique → ┐
-          ▲                               │ route_after_critique
-          └──────────── loop ─────────────┤   (confidence < threshold
-                        done → approval → finalize → END
-                                 │
-                            interrupt() ⏸  (only when require_approval)
+START → recall → gather → synthesize → critique → ┐
+                   ▲                               │ route_after_critique
+                   └──────────── loop ─────────────┤   (confidence < threshold
+                                 done → approval → finalize → remember → END
+                                          │
+                                     interrupt() ⏸  (only when require_approval)
 ```
 
 | Node         | Role                                                              |
 |--------------|-------------------------------------------------------------------|
+| `recall`     | Retrieve similar past incidents from memory to prime synthesis    |
 | `gather`     | Summarize raw signals per source; re-focus on the critic's guidance on a reloop |
-| `synthesize` | Combine the evidence into one root-cause hypothesis + proposed fix |
+| `synthesize` | Combine the evidence (+ recalled incidents) into one root-cause hypothesis + fix |
 | `critique`   | Score confidence (0–1) and emit guidance for another pass          |
 | `approval`   | Human-in-the-loop gate: `interrupt()`s for a decision when asked   |
 | `finalize`   | Assemble the report returned to the caller                         |
+| `remember`   | Store this finalized incident in memory for future recall          |
+
+(`recall`/`remember` are present only when memory is enabled.)
 
 The state schema, reducers, and edges live in
 [`hivemind_brain/`](hivemind_brain/).
@@ -60,6 +64,22 @@ State is held by an in-memory checkpointer, so the brain runs single-replica
 (`brain.enabled` deploys one). A multi-replica brain would swap in a shared
 checkpointer (Postgres/Redis). The default `/triage` (no `require_approval`) is
 unchanged and still completes in one call.
+
+## Incident memory
+
+The graph is bookended with a vector store of past incidents ([`memory.py`](hivemind_brain/memory.py)):
+a `recall` node retrieves the most similar past incidents before `gather` and
+feeds them into the `synthesize` prompt, and a `remember` node stores each
+finalized incident after `finalize`. So recurring failure modes converge on what
+worked before — the brain gets better over time instead of starting cold every
+alert. Rejected proposals are not remembered.
+
+Embeddings are deterministic **feature hashing** (real cosine-similarity vectors,
+no external embedding model or API — Groq offers none), so it works everywhere
+offline; swap in a semantic embedding model for nuance. The store is in-memory
+and single-replica (like the approval checkpointer); `/healthz` reports its size.
+Disable with `HIVEMIND_MEMORY_ENABLED=false` (or `brain.memoryEnabled: false`);
+tune recall breadth with `HIVEMIND_MEMORY_K`.
 
 ## Run it
 
