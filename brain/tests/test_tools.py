@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from hivemind_brain.tools import (
+    build_lc_tools,
     get_metrics,
     list_runbooks,
     read_runbook,
@@ -55,3 +56,15 @@ def test_tool_descriptions_lists_all_tools():
     desc = tool_descriptions()
     for name in ("search_logs", "get_metrics", "list_runbooks", "read_runbook"):
         assert name in desc
+
+
+def test_build_lc_tools_names_and_bound_incident():
+    tools = build_lc_tools(INCIDENT)
+    assert [t.name for t in tools] == [
+        "search_logs", "get_metrics", "list_runbooks", "read_runbook",
+    ]
+    by_name = {t.name: t for t in tools}
+    # Each tool closes over INCIDENT; the model only supplies the query arg.
+    assert "OOMKilled" in by_name["search_logs"].invoke({"pattern": "oomkilled"})
+    assert by_name["get_metrics"].invoke({}) == "memory climbing to limit"
+    assert by_name["read_runbook"].invoke({"name": "OOMKill"}) == "raise the memory limit"

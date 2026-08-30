@@ -83,29 +83,25 @@ tune recall breadth with `HIVEMIND_MEMORY_K`.
 
 ## Evidence gathering: summary vs ReAct
 
-The `gather` node has two modes (`HIVEMIND_GATHER_MODE`, or `brain.gatherMode`):
+The `gather` node has three modes (`HIVEMIND_GATHER_MODE`, or `brain.gatherMode`).
+Instead of one blind summarize pass, the ReAct modes let a tool-choosing agent
+([`tools.py`](hivemind_brain/tools.py)) *investigate* the evidence bundle —
+deciding which tool to call (`search_logs`, `get_metrics`, `list_runbooks`,
+`read_runbook`) over the POSTed evidence, accumulating observations until it has
+enough or hits `HIVEMIND_REACT_MAX_STEPS`. The tool trace lands in the node's
+history. (The brain has no cluster access, so the tools query the evidence the
+operator already gathered, not the live cluster.)
 
-- **`summary`** (default) — one LLM pass distills the whole evidence bundle.
-- **`react`** — a tool-choosing agent ([`tools.py`](hivemind_brain/tools.py))
-  investigates the bundle instead of summarizing it blind: each step it decides
-  which tool to call (`search_logs`, `get_metrics`, `list_runbooks`,
-  `read_runbook`) over the POSTed evidence, accumulating observations until it
-  has enough or hits `HIVEMIND_REACT_MAX_STEPS`. The trace lands in the node's
-  history.
-
-ReAct uses **JSON actions** rather than native tool-calling, so it works with the
-offline mock and needs no tool-calling support from the provider. (The brain has
-no cluster access, so the tools query the evidence the operator already gathered,
-not the live cluster.)
-
-> **Caveat — model compatibility.** JSON-action ReAct depends on the model
-> reliably emitting *only* a JSON object. Some current models don't: the Groq
-> `openai/gpt-oss-*` models emit a *native* tool call (rejected as
-> `tool_use_failed`), and `qwen3.*` wraps the JSON in reasoning prose. So `react`
-> is validated against the mock but not against those models — **`summary` is the
-> robust default and what real-Groq runs should use today.** The production fix is
-> native tool-calling (`bind_tools`) for capable providers, with the JSON-action
-> loop as the fallback for models without it; that's the planned follow-up.
+- **`summary`** (default) — one LLM pass distills the whole bundle. Most robust:
+  works with any model and the offline mock.
+- **`react-native`** — the agent drives the loop with the provider's **native
+  tool-calling** (`bind_tools` + real `tool_calls`). The robust ReAct path for
+  tool-calling models; **verified end-to-end against Groq `openai/gpt-oss-20b`**.
+- **`react`** — a **JSON-action** loop (the model returns `{action, action_input}`
+  as JSON). Needs no tool-calling support, so it's the fallback for models
+  without it and drives the offline mock — but models trained for native
+  tool-calling reject it (Groq `openai/gpt-oss-*` → `tool_use_failed`) or wrap it
+  in prose (`qwen3.*`). Prefer `react-native` on providers that support tools.
 
 ## Run it
 

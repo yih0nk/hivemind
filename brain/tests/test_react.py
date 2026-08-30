@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import itertools
 
+from langchain_core.messages import AIMessage, ToolMessage
+
 from hivemind_brain.config import Settings
 from hivemind_brain.graph import build_graph, initial_state
 from hivemind_brain.llm import MockChatModel
-from hivemind_brain.nodes import make_react_gather
+from hivemind_brain.nodes import make_react_gather, make_react_gather_native
 
 INCIDENT = {
     "alert": "OOMKilled",
@@ -70,3 +72,86 @@ def test_react_max_steps_truncates_without_finishing():
     assert hist["truncated"] is True
     assert hist["steps"] == 3
     assert out["evidence"]["logs"] == INCIDENT["logs"]  # fell back to raw bundle
+
+
+# --- native tool-calling ReAct ---
+
+
+class FakeToolCallingModel:
+    """Emulates a native tool-calling model: first turn calls a tool, then
+    (after the ToolMessage) replies with a JSON evidence summary."""
+
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, messages):
+        if any(isinstance(m, ToolMessage) for m in messages):
+            return AIMessage(
+                content='{"logs":"OOMKilled found","metrics":"mem high","runbooks":"oom"}'
+            )
+        return AIMessage(
+            content="",
+            tool_calls=[{"name": "search_logs", "args": {"pattern": "OOM"}, "id": "c1"}],
+        )
+
+
+class AlwaysToolCalling:
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, messages):
+        return AIMessage(
+            content="",
+            tool_calls=[{"name": "get_metrics", "args": {}, "id": "c"}],
+        )
+
+
+class HybridToolModel(MockChatModel):
+    """Native tool-calling for the gather step; MockChatModel for the rest."""
+
+    def bind_tools(self, tools):
+        return self
+
+    def invoke(self, messages):
+        text = "\n".join(str(m.content) for m in messages).lower()
+        if "investigating an incident" in text:
+            if any(isinstance(m, ToolMessage) for m in messages):
+                return AIMessage(
+                    content='{"logs":"OOMKilled found","metrics":"mem high","runbooks":"oom"}'
+                )
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "search_logs", "args": {"pattern": "OOM"}, "id": "c1"}],
+            )
+        return super().invoke(messages)
+
+
+def test_native_react_calls_tool_then_summarizes():
+    node = make_react_gather_native(FakeToolCallingModel())
+    out = node({"incident": INCIDENT})
+
+    assert out["evidence"]["logs"] == "OOMKilled found"
+    hist = out["history"][0]
+    assert hist["mode"] == "react-native"
+    assert hist["trace"][0]["action"] == "search_logs"
+    assert "OOMKilled" in hist["trace"][0]["observation"]
+
+
+def test_native_react_truncates_when_model_never_stops():
+    node = make_react_gather_native(AlwaysToolCalling(), max_steps=2)
+    out = node({"incident": INCIDENT})
+    hist = out["history"][0]
+    assert hist["truncated"] is True
+    assert hist["steps"] == 2
+    assert out["evidence"]["logs"] == INCIDENT["logs"]  # fell back to raw bundle
+
+
+def test_react_native_mode_graph_reaches_report():
+    settings = Settings(provider="mock", gather_mode="react-native", memory_enabled=False)
+    graph = build_graph(settings, model=HybridToolModel(), memory=None)
+    final = graph.invoke(initial_state(INCIDENT, settings), _cfg())
+
+    assert final["report"]["root_cause"]
+    gh = [h for h in final["history"] if h.get("node") == "gather"][0]
+    assert gh["mode"] == "react-native"
+    assert gh["trace"], "expected a native tool call in the trace"

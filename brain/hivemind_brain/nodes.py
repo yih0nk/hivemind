@@ -11,11 +11,12 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import interrupt
 
-from .llm import call_json
+from .llm import _first_json, call_json
 from .state import TriageState
-from .tools import list_runbooks, run_tool, tool_descriptions
+from .tools import build_lc_tools, list_runbooks, run_tool, tool_descriptions
 
 Node = Callable[[TriageState], dict[str, Any]]
 
@@ -116,6 +117,79 @@ def make_react_gather(model: Any, max_steps: int = 4) -> Node:
         }
 
     return react_gather
+
+
+def make_react_gather_native(model: Any, max_steps: int = 4) -> Node:
+    """ReAct gather using the provider's *native* tool-calling.
+
+    Tools are bound with ``bind_tools`` and the model drives the loop with real
+    tool calls (``ai.tool_calls``); each result is fed back as a ``ToolMessage``
+    until the model stops calling tools and replies with a JSON evidence summary.
+    This is the robust path for tool-calling models (Groq gpt-oss, etc.) that the
+    JSON-action loop can't drive. Requires a model exposing ``bind_tools``.
+    """
+
+    def react_gather(state: TriageState) -> dict[str, Any]:
+        incident = state.get("incident", {})
+        guidance = state.get("guidance", "")
+        tools = build_lc_tools(incident)
+        by_name = {t.name: t for t in tools}
+        bound = model.bind_tools(tools)
+
+        user = _incident_brief(incident)
+        if guidance:
+            user += f"\n\nFocus this investigation on: {guidance}"
+        messages: list[Any] = [
+            SystemMessage(
+                content=(
+                    "You are an SRE investigating an incident. Call the provided "
+                    "tools to examine the evidence. When you have enough, STOP "
+                    "calling tools and reply with a JSON object "
+                    '{"logs": "...", "metrics": "...", "runbooks": "..."} '
+                    "summarizing your per-source findings for synthesis."
+                )
+            ),
+            HumanMessage(content=user),
+        ]
+
+        trace: list[dict[str, Any]] = []
+        for step in range(max_steps):
+            ai = bound.invoke(messages)
+            messages.append(ai)
+            tool_calls = getattr(ai, "tool_calls", None) or []
+            if not tool_calls:
+                try:
+                    evidence = _first_json(str(ai.content))
+                except ValueError:
+                    evidence = _raw_bundle(incident)
+                return {
+                    "evidence": evidence,
+                    "history": [{"node": "gather", "mode": "react-native",
+                                 "steps": step + 1, "trace": trace}],
+                }
+            for tc in tool_calls:
+                tool = by_name.get(tc["name"])
+                obs = tool.invoke(tc.get("args", {})) if tool else f"(unknown tool {tc['name']})"
+                messages.append(ToolMessage(content=str(obs), tool_call_id=tc.get("id", "")))
+                trace.append({"action": tc["name"], "action_input": tc.get("args", {}),
+                              "observation": str(obs)[:500]})
+
+        return {
+            "evidence": _raw_bundle(incident),
+            "history": [{"node": "gather", "mode": "react-native", "steps": max_steps,
+                         "trace": trace, "truncated": True}],
+        }
+
+    return react_gather
+
+
+def _raw_bundle(incident: dict[str, Any]) -> dict[str, Any]:
+    """Fallback evidence: the untouched bundle, when the agent yields nothing usable."""
+    return {
+        "logs": incident.get("logs", ""),
+        "metrics": incident.get("metrics", ""),
+        "runbooks": list_runbooks(incident),
+    }
 
 
 def _react_prompt(incident: dict[str, Any], guidance: str, scratchpad: list[dict[str, Any]]) -> str:

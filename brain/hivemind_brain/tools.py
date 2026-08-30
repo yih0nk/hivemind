@@ -71,3 +71,37 @@ def run_tool(name: str, incident: dict[str, Any], arg: str) -> str:
 def tool_descriptions() -> str:
     """A bulleted list of tool signatures for the agent's system prompt."""
     return "\n".join(f"- {desc}" for _, desc in TOOLS.values())
+
+
+def build_lc_tools(incident: dict[str, Any]) -> list[Any]:
+    """Return LangChain tools bound to one incident, for native tool-calling.
+
+    Each tool closes over the incident so the model only supplies the query
+    argument (a log pattern, a runbook name). Used by the native ReAct gather,
+    which binds these to the model via ``bind_tools``.
+    """
+    from langchain_core.tools import tool
+
+    # Inner names are prefixed so they don't shadow the module-level functions
+    # they call; the tool's model-facing name is set explicitly.
+    @tool("search_logs")
+    def _search(pattern: str) -> str:
+        """Return incident log lines containing the given substring."""
+        return search_logs(incident, pattern)
+
+    @tool("get_metrics")
+    def _metrics() -> str:
+        """Return the incident's metrics/trends context."""
+        return get_metrics(incident)
+
+    @tool("list_runbooks")
+    def _runbooks() -> str:
+        """Return the names of the candidate runbooks for this incident."""
+        return list_runbooks(incident)
+
+    @tool("read_runbook")
+    def _read(name: str) -> str:
+        """Return the content of the named runbook."""
+        return read_runbook(incident, name)
+
+    return [_search, _metrics, _runbooks, _read]
