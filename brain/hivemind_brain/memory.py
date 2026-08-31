@@ -16,7 +16,9 @@ shared/persistent store is the multi-replica upgrade.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
+import os
 import re
 from typing import Any
 
@@ -62,24 +64,62 @@ class HashingEmbeddings(Embeddings):
 class IncidentMemory:
     """A small in-memory vector store of past-incident summaries."""
 
-    def __init__(self, embeddings: Embeddings | None = None, k: int = 3) -> None:
+    def __init__(
+        self,
+        embeddings: Embeddings | None = None,
+        k: int = 3,
+        path: str | None = None,
+    ) -> None:
         self._store = InMemoryVectorStore(embeddings or HashingEmbeddings())
         self.k = k
-        self._size = 0
+        self.path = path
+        # Keep the raw records too: the vector store isn't serialized directly,
+        # so persistence dumps these and rebuilds the store on load.
+        self._records: list[dict[str, Any]] = []
+        self._load()
 
     def remember(self, text: str, metadata: dict[str, Any] | None = None) -> None:
-        """Add one incident summary to the store."""
+        """Add one incident summary to the store (and persist, if configured)."""
         if not text:
             return
-        self._store.add_texts([text], metadatas=[metadata or {}])
-        self._size += 1
+        meta = metadata or {}
+        self._store.add_texts([text], metadatas=[meta])
+        self._records.append({"text": text, "metadata": meta})
+        self._save()
 
     def recall(self, query: str, k: int | None = None) -> list[str]:
         """Return up to k past-incident summaries most similar to query."""
-        if self._size == 0 or not query:
+        if not self._records or not query:
             return []
         docs = self._store.similarity_search(query, k=k or self.k)
         return [d.page_content for d in docs]
 
     def size(self) -> int:
-        return self._size
+        return len(self._records)
+
+    def persisted(self) -> bool:
+        return self.path is not None
+
+    def _load(self) -> None:
+        """Rebuild the store from a prior snapshot when a path is configured."""
+        if not self.path or not os.path.exists(self.path):
+            return
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                records = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return  # a corrupt/unreadable snapshot must not sink startup
+        for rec in records:
+            text = rec.get("text", "")
+            if text:
+                self._store.add_texts([text], metadatas=[rec.get("metadata", {})])
+                self._records.append({"text": text, "metadata": rec.get("metadata", {})})
+
+    def _save(self) -> None:
+        if not self.path:
+            return
+        try:
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self._records, f)
+        except OSError:
+            pass  # best-effort; losing durability must not fail a triage

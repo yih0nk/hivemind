@@ -43,6 +43,8 @@ class Settings:
     memory_enabled: bool = True
     memory_k: int = 3
     memory_dim: int = 256
+    # File path to persist memory across restarts; empty = in-memory only.
+    memory_path: str = ""
 
     @property
     def resolved_provider(self) -> str:
@@ -65,6 +67,7 @@ class Settings:
             memory_enabled=_get_bool("HIVEMIND_MEMORY_ENABLED", True),
             memory_k=int(os.getenv("HIVEMIND_MEMORY_K", "3")),
             memory_dim=int(os.getenv("HIVEMIND_MEMORY_DIM", "256")),
+            memory_path=os.getenv("HIVEMIND_MEMORY_PATH", ""),
             gather_mode=os.getenv("HIVEMIND_GATHER_MODE", "summary").strip().lower(),
             react_max_steps=int(os.getenv("HIVEMIND_REACT_MAX_STEPS", "4")),
         )

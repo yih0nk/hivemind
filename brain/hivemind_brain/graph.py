@@ -49,7 +49,11 @@ def default_memory(settings: Settings) -> IncidentMemory | None:
     """Build the incident memory from settings, or None when disabled."""
     if not settings.memory_enabled:
         return None
-    return IncidentMemory(HashingEmbeddings(settings.memory_dim), settings.memory_k)
+    return IncidentMemory(
+        HashingEmbeddings(settings.memory_dim),
+        settings.memory_k,
+        path=settings.memory_path or None,
+    )
 
 
 def build_graph(
