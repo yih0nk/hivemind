@@ -51,6 +51,7 @@ def healthz() -> dict[str, object]:
         "memory": {
             "enabled": _memory is not None,
             "size": _memory.size() if _memory is not None else 0,
+            "persisted": _memory.persisted() if _memory is not None else False,
         },
     }
 

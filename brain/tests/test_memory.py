@@ -43,3 +43,30 @@ def test_remember_ignores_empty_text():
     mem = IncidentMemory()
     mem.remember("")
     assert mem.size() == 0
+
+
+def test_memory_persists_and_reloads(tmp_path):
+    path = str(tmp_path / "memory.json")
+
+    mem = IncidentMemory(k=3, path=path)
+    assert mem.persisted() is True
+    mem.remember("Alert: OOMKilled\nFix: raise the memory limit")
+    mem.remember("Alert: HighErrorRate\nFix: rolled back the deploy")
+
+    # A fresh instance on the same path recovers the records and can recall them.
+    reloaded = IncidentMemory(k=3, path=path)
+    assert reloaded.size() == 2
+    hits = reloaded.recall("OOMKilled out of memory")
+    assert any("OOMKilled" in h for h in hits)
+
+
+def test_in_memory_has_no_persistence():
+    mem = IncidentMemory()
+    assert mem.persisted() is False
+
+
+def test_corrupt_snapshot_does_not_crash(tmp_path):
+    path = tmp_path / "memory.json"
+    path.write_text("not valid json{{{")
+    mem = IncidentMemory(path=str(path))  # must not raise
+    assert mem.size() == 0

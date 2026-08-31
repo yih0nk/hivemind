@@ -44,6 +44,12 @@ brain:
   # checkpointer); disable with memoryEnabled: false.
   memoryEnabled: true
   memoryK: 3
+  # Persist incident memory to a mounted volume so it survives restarts.
+  # When enabled, a ReadWriteOnce PVC is created and mounted at the path's dir.
+  persistence:
+    enabled: false
+    size: 1Gi
+    path: /data/memory.json
   resources:
     requests:
       cpu: 100m
