@@ -76,10 +76,16 @@ alert. Rejected proposals are not remembered.
 
 Embeddings are deterministic **feature hashing** (real cosine-similarity vectors,
 no external embedding model or API — Groq offers none), so it works everywhere
-offline; swap in a semantic embedding model for nuance. The store is in-memory
-and single-replica (like the approval checkpointer); `/healthz` reports its size.
-Disable with `HIVEMIND_MEMORY_ENABLED=false` (or `brain.memoryEnabled: false`);
-tune recall breadth with `HIVEMIND_MEMORY_K`.
+offline; swap in a semantic embedding model for nuance. `/healthz` reports the
+store's `size` and whether it's `persisted`. Disable with
+`HIVEMIND_MEMORY_ENABLED=false` (or `brain.memoryEnabled: false`); tune recall
+breadth with `HIVEMIND_MEMORY_K`.
+
+**Persistence.** By default the store is in-memory and evaporates on restart. Set
+`HIVEMIND_MEMORY_PATH` to snapshot it to disk (rebuilt on startup; a corrupt
+snapshot is ignored, not fatal). In-cluster, `brain.persistence.enabled: true`
+provisions a ReadWriteOnce PVC and mounts it, so memory survives pod restarts.
+Single-replica, matching the approval checkpointer.
 
 ## Evidence gathering: summary vs ReAct
 
