@@ -49,6 +49,10 @@ spec:
               value: {{ .Values.brain.memoryK | quote }}
             - name: HIVEMIND_GATHER_MODE
               value: {{ .Values.brain.gatherMode | quote }}
+            {{- if .Values.brain.persistence.enabled }}
+            - name: HIVEMIND_MEMORY_PATH
+              value: {{ .Values.brain.persistence.path | quote }}
+            {{- end }}
             {{- if .Values.llmApiKey }}
             # Reuses the same Groq key as the operator (values.llmApiKey).
             - name: GROQ_API_KEY
@@ -74,4 +78,15 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.brain.resources | nindent 12 }}
+          {{- if .Values.brain.persistence.enabled }}
+          volumeMounts:
+            - name: memory
+              mountPath: {{ dir .Values.brain.persistence.path | quote }}
+          {{- end }}
+      {{- if .Values.brain.persistence.enabled }}
+      volumes:
+        - name: memory
+          persistentVolumeClaim:
+            claimName: hivemind-brain-memory
+      {{- end }}
 {{- end }}

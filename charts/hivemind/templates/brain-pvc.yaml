@@ -1,0 +1,17 @@
+{{- if and .Values.brain.enabled .Values.brain.persistence.enabled }}
+# Backs the brain's incident memory so it survives pod restarts. Single-replica
+# (ReadWriteOnce), matching the brain's single-replica in-memory checkpointer.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hivemind-brain-memory
+  namespace: {{ .Values.operatorNamespace }}
+  labels:
+    app.kubernetes.io/name: hivemind-brain
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.brain.persistence.size | quote }}
+{{- end }}
