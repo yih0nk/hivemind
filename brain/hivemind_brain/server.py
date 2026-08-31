@@ -1,18 +1,21 @@
 """FastAPI surface over the reflection graph.
 
-    POST /triage   → run the graph on an incident, return the root-cause report
-                     (or, with require_approval, pause at the approval gate)
-    POST /resume   → resume a paused triage with a human approve/reject decision
-    GET  /healthz  → liveness + which LLM provider resolved
+    POST /triage         → run the graph, return the root-cause report
+                           (or, with require_approval, pause at the approval gate)
+    POST /triage/stream  → same, but stream node-by-node progress as SSE
+    POST /resume         → resume a paused triage with an approve/reject decision
+    GET  /healthz        → liveness + resolved provider, gather mode, memory size
 
 The graph is compiled once at startup and reused across requests.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from . import __version__
@@ -95,6 +98,50 @@ def triage(req: TriageRequest) -> TriageResponse:
     config = {"configurable": {"thread_id": thread_id}}
     final = _graph.invoke(state, config)
     return _to_response(final, thread_id)
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.post("/triage/stream")
+def triage_stream(req: TriageRequest) -> StreamingResponse:
+    """Run a triage and stream node-by-node progress as Server-Sent Events.
+
+    Emits a `node` event per graph step (with confidence when available), then a
+    terminal `report` event -- or an `awaiting_approval` event if the run pauses
+    at the gate. Lets a UI or `curl -N` watch the reflection loop live.
+    """
+    state = initial_state(
+        incident=req.to_incident(),
+        settings=_settings,
+        max_iterations=req.max_iterations,
+        confidence_threshold=req.confidence_threshold,
+        require_approval=req.require_approval,
+    )
+    thread_id = uuid.uuid4().hex
+    config = {"configurable": {"thread_id": thread_id}}
+
+    def events():
+        report: dict = {}
+        for chunk in _graph.stream(state, config, stream_mode="updates"):
+            if "__interrupt__" in chunk:
+                yield _sse("awaiting_approval", {
+                    "thread_id": thread_id,
+                    "approval_request": chunk["__interrupt__"][0].value,
+                })
+                return
+            for node, update in chunk.items():
+                event = {"node": node}
+                if isinstance(update, dict):
+                    if "confidence" in update:
+                        event["confidence"] = update["confidence"]
+                    if update.get("report"):
+                        report = update["report"]
+                yield _sse("node", event)
+        yield _sse("report", {"thread_id": thread_id, **report})
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 @app.post("/resume", response_model=TriageResponse)
