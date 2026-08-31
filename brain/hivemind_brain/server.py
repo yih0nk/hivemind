@@ -1,9 +1,10 @@
 """FastAPI surface over the reflection graph.
 
-    POST /triage   → run the graph on an incident, return the root-cause report
-                     (or, with require_approval, pause at the approval gate)
-    POST /resume   → resume a paused triage with a human approve/reject decision
-    GET  /healthz  → liveness + which LLM provider resolved
+    POST /triage         → run the graph, return the root-cause report
+                           (or, with require_approval, pause at the approval gate)
+    POST /triage/stream  → same, but stream node-by-node progress as SSE
+    POST /resume         → resume a paused triage with an approve/reject decision
+    GET  /healthz        → liveness + resolved provider, gather mode, memory size
 
 The graph is compiled once at startup and reused across requests.
 """

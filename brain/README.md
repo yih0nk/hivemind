@@ -125,6 +125,21 @@ curl -s localhost:8090/triage -H 'content-type: application/json' -d '{
 }' | python -m json.tool
 ```
 
+### Watch progress live (SSE)
+
+`POST /triage/stream` streams the graph step by step as Server-Sent Events — a
+`node` event per step (with `confidence` where available), then a terminal
+`report` event, or `awaiting_approval` if the run pauses at the gate:
+
+```sh
+curl -N localhost:8090/triage/stream -H 'content-type: application/json' \
+  -d '{"alert":"OOMKilled","logs":"OOMKilled; restarted 5x"}'
+# event: node        data: {"node":"gather"}
+# event: node        data: {"node":"critique","confidence":0.55}
+# ...
+# event: report      data: {"thread_id":"…","root_cause":"…"}
+```
+
 ## LLM backend
 
 Provider resolves from `HIVEMIND_LLM_PROVIDER`:
