@@ -5,6 +5,7 @@
     POST /triage/stream  → same, but stream node-by-node progress as SSE
     POST /resume         → resume a paused triage with an approve/reject decision
     GET  /healthz        → liveness + resolved provider, gather mode, memory size
+    GET  /metrics        → Prometheus counters (triage/resume) + memory gauge
 
 The graph is compiled once at startup and reused across requests.
 """
