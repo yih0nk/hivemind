@@ -149,6 +149,17 @@ curl -N localhost:8090/triage/stream -H 'content-type: application/json' \
 # event: report      data: {"thread_id":"…","root_cause":"…"}
 ```
 
+### Metrics
+
+`GET /metrics` exposes Prometheus counters in text format — no extra dependency:
+
+```
+hivemind_triage_total{status="completed"} 12
+hivemind_triage_total{status="awaiting_approval"} 3
+hivemind_resume_total{action="approve"} 2
+hivemind_memory_size 15
+```
+
 ## LLM backend
 
 Provider resolves from `HIVEMIND_LLM_PROVIDER`:
