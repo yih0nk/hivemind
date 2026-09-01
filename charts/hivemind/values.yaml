@@ -50,6 +50,9 @@ brain:
     enabled: false
     size: 1Gi
     path: /data/memory.json
+    # SQLite checkpoint file (on the same volume) so paused approval runs
+    # survive restarts too. Empty = in-memory checkpointer.
+    checkpointPath: /data/checkpoints.sqlite
   resources:
     requests:
       cpu: 100m

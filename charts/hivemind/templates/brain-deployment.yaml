@@ -52,6 +52,10 @@ spec:
             {{- if .Values.brain.persistence.enabled }}
             - name: HIVEMIND_MEMORY_PATH
               value: {{ .Values.brain.persistence.path | quote }}
+            {{- if .Values.brain.persistence.checkpointPath }}
+            - name: HIVEMIND_CHECKPOINT_PATH
+              value: {{ .Values.brain.persistence.checkpointPath | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.llmApiKey }}
             # Reuses the same Groq key as the operator (values.llmApiKey).

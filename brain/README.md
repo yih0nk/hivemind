@@ -60,10 +60,13 @@ curl -s localhost:8090/resume -H 'content-type: application/json' -d '{
 }'   # → {"status":"completed","approved":true,"root_cause":"…"}
 ```
 
-State is held by an in-memory checkpointer, so the brain runs single-replica
-(`brain.enabled` deploys one). A multi-replica brain would swap in a shared
-checkpointer (Postgres/Redis). The default `/triage` (no `require_approval`) is
-unchanged and still completes in one call.
+State is held by a checkpointer — in-memory by default, so a paused run is lost
+on restart. Set `HIVEMIND_CHECKPOINT_PATH` (or enable `brain.persistence`, which
+puts a SQLite checkpoint on the PVC) and a run paused at the gate **survives a
+restart** — a fresh process resumes it from the same `thread_id`. `/healthz`
+reports the checkpointer type. Still single-replica (`brain.enabled` deploys
+one); a multi-replica brain would swap in a shared backend (Postgres). The
+default `/triage` (no `require_approval`) is unchanged and completes in one call.
 
 ## Incident memory
 
