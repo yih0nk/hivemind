@@ -15,12 +15,13 @@ import json
 import uuid
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from langgraph.types import Command
 
 from . import __version__
 from .config import Settings
 from .graph import build_graph, default_memory, initial_state
+from .metrics import Metrics
 from .models import ResumeRequest, TriageRequest, TriageResponse
 
 # Load a local .env if present (dev convenience). No-op when python-dotenv is
@@ -39,6 +40,14 @@ _settings = Settings.from_env()
 # the graph shares this instance and accumulates across requests.
 _memory = default_memory(_settings)
 _graph = build_graph(_settings, memory=_memory)
+
+_metrics = Metrics()
+_metrics.counter("hivemind_triage_total", "Triage runs by terminal status.")
+_metrics.counter("hivemind_resume_total", "Approval resumes by decision.")
+_metrics.gauge(
+    "hivemind_memory_size", "Incidents currently in memory.",
+    lambda: _memory.size() if _memory is not None else 0,
+)
 
 
 @app.get("/healthz")
@@ -99,6 +108,8 @@ def triage(req: TriageRequest) -> TriageResponse:
     thread_id = uuid.uuid4().hex
     config = {"configurable": {"thread_id": thread_id}}
     final = _graph.invoke(state, config)
+    status = "awaiting_approval" if "__interrupt__" in final else "completed"
+    _metrics.inc("hivemind_triage_total", {"status": status})
     return _to_response(final, thread_id)
 
 
@@ -128,6 +139,7 @@ def triage_stream(req: TriageRequest) -> StreamingResponse:
         report: dict = {}
         for chunk in _graph.stream(state, config, stream_mode="updates"):
             if "__interrupt__" in chunk:
+                _metrics.inc("hivemind_triage_total", {"status": "awaiting_approval"})
                 yield _sse("awaiting_approval", {
                     "thread_id": thread_id,
                     "approval_request": chunk["__interrupt__"][0].value,
@@ -141,6 +153,7 @@ def triage_stream(req: TriageRequest) -> StreamingResponse:
                     if update.get("report"):
                         report = update["report"]
                 yield _sse("node", event)
+        _metrics.inc("hivemind_triage_total", {"status": "completed"})
         yield _sse("report", {"thread_id": thread_id, **report})
 
     return StreamingResponse(events(), media_type="text/event-stream")
@@ -159,7 +172,15 @@ def resume(req: ResumeRequest) -> TriageResponse:
     final = _graph.invoke(
         Command(resume={"action": req.action, "note": req.note}), config
     )
+    action = "approve" if req.action == "approve" else "reject"
+    _metrics.inc("hivemind_resume_total", {"action": action})
     return _to_response(final, req.thread_id)
+
+
+@app.get("/metrics")
+def metrics() -> PlainTextResponse:
+    """Prometheus metrics: triage/resume counters and the memory-size gauge."""
+    return PlainTextResponse(_metrics.render())
 
 
 def main() -> None:
