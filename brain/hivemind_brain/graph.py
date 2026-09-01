@@ -56,25 +56,46 @@ def default_memory(settings: Settings) -> IncidentMemory | None:
     )
 
 
+def default_checkpointer(settings: Settings):
+    """A SQLite checkpointer when a path is set (survives restarts), else in-memory.
+
+    The sqlite connection uses check_same_thread=False because the API server
+    invokes the graph from a worker threadpool.
+    """
+    if not settings.checkpoint_path:
+        return MemorySaver()
+    import sqlite3
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    conn = sqlite3.connect(settings.checkpoint_path, check_same_thread=False)
+    return SqliteSaver(conn)
+
+
 def build_graph(
     settings: Settings | None = None,
     model: Any | None = None,
     memory: Any = _DEFAULT_MEMORY,
+    checkpointer: Any = None,
 ):
     """Compile the reflection graph.
 
     ``model`` can be injected (tests pass a mock directly); otherwise it is
     built from ``settings``. ``memory`` defaults to one built from settings;
     pass an IncidentMemory to inject one, or None to disable recall/remember.
+    ``checkpointer`` defaults to one built from settings (SQLite when
+    checkpoint_path is set, else in-memory); pass one to inject it in tests.
 
-    Compiled with an in-memory checkpointer so the approval interrupt can pause
-    and resume; a single-replica deployment keeps that state (and the memory
-    store) addressable. A multi-replica brain would swap in shared backends.
+    A checkpointer is required for the approval interrupt to pause and resume; a
+    SQLite path lets a paused run survive a restart. Single-replica; a
+    multi-replica brain would swap in a shared backend (Postgres).
     """
     settings = settings or Settings.from_env()
     model = model if model is not None else build_model(settings)
     if memory is _DEFAULT_MEMORY:
         memory = default_memory(settings)
+    if checkpointer is None:
+        checkpointer = default_checkpointer(settings)
 
     if settings.gather_mode == "react-native":
         gather_node = make_react_gather_native(model, settings.react_max_steps)
@@ -112,7 +133,7 @@ def build_graph(
         builder.add_edge(START, "gather")
         builder.add_edge("finalize", END)
 
-    return builder.compile(checkpointer=MemorySaver())
+    return builder.compile(checkpointer=checkpointer)
 
 
 def initial_state(
