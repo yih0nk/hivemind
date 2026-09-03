@@ -169,6 +169,10 @@ Provider resolves from `HIVEMIND_LLM_PROVIDER`:
 - `mock` — a deterministic model that returns valid per-node JSON and exercises
   one reflection loop. No key, no network — this is what the tests use.
 
+Transient LLM failures (rate limits, timeouts, 5xx) are retried with exponential
+backoff — `HIVEMIND_LLM_MAX_RETRIES` (default 2), `HIVEMIND_LLM_RETRY_BASE_S`
+(default 0.5). Non-transient errors (e.g. a 404 model-not-found) fail fast.
+
 ## Tests
 
 ```sh
