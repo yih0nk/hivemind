@@ -13,9 +13,12 @@ The graph is compiled once at startup and reused across requests.
 from __future__ import annotations
 
 import json
+import logging
+import os
+import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from langgraph.types import Command
 
@@ -34,7 +37,36 @@ try:  # pragma: no cover - trivial optional import
 except ImportError:  # pragma: no cover
     pass
 
+logging.basicConfig(
+    level=os.getenv("HIVEMIND_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+_log = logging.getLogger("hivemind.brain")
+
 app = FastAPI(title="Hivemind Brain", version=__version__)
+
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    """Tag each request with an id, time it, and log the outcome.
+
+    The id is echoed as X-Request-ID so a caller (or the operator) can correlate
+    a triage across the brain's logs. /metrics and /healthz are not logged to
+    keep scrape/probe noise down.
+    """
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    start = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    if request.url.path not in ("/metrics", "/healthz"):
+        duration_ms = (time.perf_counter() - start) * 1000
+        _log.info(
+            "%s %s -> %d (%.1fms) id=%s",
+            request.method, request.url.path, response.status_code,
+            duration_ms, request_id,
+        )
+    return response
+
 
 _settings = Settings.from_env()
 # Build the memory here (not inside build_graph) so /healthz can report its size;
@@ -185,8 +217,6 @@ def metrics() -> PlainTextResponse:
 
 
 def main() -> None:
-    import os
-
     import uvicorn
 
     port = int(os.getenv("HIVEMIND_BRAIN_PORT", "8090"))
