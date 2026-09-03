@@ -13,6 +13,8 @@ the raw string.
 from __future__ import annotations
 
 import json
+import os
+import time
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -169,14 +171,65 @@ def _first_json(text: str) -> dict[str, Any]:
     raise ValueError(f"no balanced JSON object found in model output: {text!r}")
 
 
+# Retry config for transient LLM failures, from the environment.
+_LLM_MAX_RETRIES = int(os.getenv("HIVEMIND_LLM_MAX_RETRIES", "2"))
+_LLM_RETRY_BASE_S = float(os.getenv("HIVEMIND_LLM_RETRY_BASE_S", "0.5"))
+
+_TRANSIENT_NAMES = (
+    "ratelimit", "timeout", "connection", "serviceunavailable",
+    "internalserver", "apiconnection", "overloaded",
+)
+_TRANSIENT_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether an LLM error is worth retrying (rate limits, timeouts, 5xx)."""
+    name = type(exc).__name__.lower()
+    if any(k in name for k in _TRANSIENT_NAMES):
+        return True
+    code = getattr(exc, "status_code", None)
+    if code is None:
+        code = getattr(getattr(exc, "response", None), "status_code", None)
+    return code in _TRANSIENT_CODES
+
+
+def invoke_with_retry(
+    model: Any,
+    messages: list[BaseMessage],
+    max_retries: int | None = None,
+    retry_base_s: float | None = None,
+) -> Any:
+    """Invoke the model, retrying transient failures with exponential backoff.
+
+    Non-transient errors (e.g. a 404 model-not-found) raise immediately -- there
+    is no point retrying those.
+    """
+    retries = _LLM_MAX_RETRIES if max_retries is None else max_retries
+    base = _LLM_RETRY_BASE_S if retry_base_s is None else retry_base_s
+    attempt = 0
+    while True:
+        try:
+            return model.invoke(messages)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless transient
+            if attempt >= retries or not _is_transient(exc):
+                raise
+            if base > 0:
+                time.sleep(base * (2 ** attempt))
+            attempt += 1
+
+
 def call_json(
-    model: Any, system: str, user: str
+    model: Any,
+    system: str,
+    user: str,
+    max_retries: int | None = None,
+    retry_base_s: float | None = None,
 ) -> dict[str, Any]:
     """Invoke ``model`` with a system+user prompt and parse a JSON object out."""
     messages: list[BaseMessage] = [
         SystemMessage(content=system),
         HumanMessage(content=user),
     ]
-    response = model.invoke(messages)
+    response = invoke_with_retry(model, messages, max_retries, retry_base_s)
     content = getattr(response, "content", response)
     return _first_json(str(content))
