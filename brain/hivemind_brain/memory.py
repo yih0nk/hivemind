@@ -123,3 +123,87 @@ class IncidentMemory:
                 json.dump(self._records, f)
         except OSError:
             pass  # best-effort; losing durability must not fail a triage
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    # Embeddings are L2-normalized, so cosine similarity is just the dot product.
+    return sum(x * y for x, y in zip(a, b))
+
+
+class PostgresMemory:
+    """Incident memory shared across replicas, backed by a plain Postgres table.
+
+    Rows hold the summary text, its feature-hash embedding (JSON), and metadata.
+    ``recall`` fetches recent candidate rows and ranks them by cosine in-process
+    -- no pgvector extension required, and every replica reads/writes the same
+    table so memory is genuinely shared. A connection is opened per operation
+    (simple and thread-safe under the API server's threadpool); incident volume
+    is low enough that this is fine. For very large stores, add pgvector + an ANN
+    index.
+    """
+
+    # Cap how many recent rows recall scans, so it stays bounded as memory grows.
+    _RECALL_SCAN = 500
+
+    def __init__(
+        self,
+        dsn: str,
+        embeddings: Embeddings | None = None,
+        k: int = 3,
+        table: str = "incident_memory",
+    ) -> None:
+        self.dsn = dsn
+        self.k = k
+        self._emb = embeddings or HashingEmbeddings()
+        # table comes from operator config, not user input; kept as an identifier.
+        self._table = "".join(c for c in table if c.isalnum() or c == "_")
+        self._setup()
+
+    def _connect(self):
+        import psycopg
+
+        return psycopg.connect(self.dsn, autocommit=True)
+
+    def _setup(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                f"CREATE TABLE IF NOT EXISTS {self._table} ("
+                "id BIGSERIAL PRIMARY KEY, text TEXT NOT NULL, "
+                "embedding JSONB NOT NULL, metadata JSONB)"
+            )
+
+    def remember(self, text: str, metadata: dict[str, Any] | None = None) -> None:
+        if not text:
+            return
+        vec = self._emb.embed_query(text)
+        with self._connect() as conn:
+            conn.execute(
+                f"INSERT INTO {self._table} (text, embedding, metadata) VALUES (%s, %s, %s)",
+                (text, json.dumps(vec), json.dumps(metadata or {})),
+            )
+
+    def recall(self, query: str, k: int | None = None) -> list[str]:
+        if not query:
+            return []
+        qv = self._emb.embed_query(query)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT text, embedding FROM {self._table} ORDER BY id DESC LIMIT %s",
+                (self._RECALL_SCAN,),
+            ).fetchall()
+        scored = [
+            (
+                _cosine(qv, e if isinstance(e, list) else json.loads(e)),
+                t.decode("utf-8", "replace") if isinstance(t, bytes) else t,
+            )
+            for t, e in rows
+        ]
+        scored.sort(key=lambda s: s[0], reverse=True)
+        return [t for _, t in scored[: (k or self.k)]]
+
+    def size(self) -> int:
+        with self._connect() as conn:
+            return conn.execute(f"SELECT count(*) FROM {self._table}").fetchone()[0]
+
+    def persisted(self) -> bool:
+        return True

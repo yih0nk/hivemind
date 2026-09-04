@@ -63,10 +63,10 @@ curl -s localhost:8090/resume -H 'content-type: application/json' -d '{
 State is held by a checkpointer — in-memory by default, so a paused run is lost
 on restart. Set `HIVEMIND_CHECKPOINT_PATH` (or enable `brain.persistence`, which
 puts a SQLite checkpoint on the PVC) and a run paused at the gate **survives a
-restart** — a fresh process resumes it from the same `thread_id`. `/healthz`
-reports the checkpointer type. Still single-replica (`brain.enabled` deploys
-one); a multi-replica brain would swap in a shared backend (Postgres). The
-default `/triage` (no `require_approval`) is unchanged and completes in one call.
+restart**; set `HIVEMIND_CHECKPOINT_DSN` and it survives across **replicas** too
+(see [Scaling](#scaling-to-multiple-replicas)). `/healthz` reports the
+checkpointer type. The default `/triage` (no `require_approval`) is unchanged and
+completes in one call.
 
 ## Incident memory
 
@@ -88,7 +88,8 @@ breadth with `HIVEMIND_MEMORY_K`.
 `HIVEMIND_MEMORY_PATH` to snapshot it to disk (rebuilt on startup; a corrupt
 snapshot is ignored, not fatal). In-cluster, `brain.persistence.enabled: true`
 provisions a ReadWriteOnce PVC and mounts it, so memory survives pod restarts.
-Single-replica, matching the approval checkpointer.
+For **multiple replicas**, set `HIVEMIND_MEMORY_DSN` instead — memory then lives
+in a shared Postgres table so replicas learn from each other (see below).
 
 ## Evidence gathering: summary vs ReAct
 
@@ -111,6 +112,30 @@ operator already gathered, not the live cluster.)
   without it and drives the offline mock — but models trained for native
   tool-calling reject it (Groq `openai/gpt-oss-*` → `tool_use_failed`) or wrap it
   in prose (`qwen3.*`). Prefer `react-native` on providers that support tools.
+
+## Scaling to multiple replicas
+
+A single brain holds its checkpointer and memory in-process, so multiple replicas
+wouldn't share paused approvals or learned incidents. Point both at a shared
+**Postgres** and they do:
+
+```sh
+export HIVEMIND_CHECKPOINT_DSN=postgresql://user:pass@pg:5432/hivemind
+export HIVEMIND_MEMORY_DSN=postgresql://user:pass@pg:5432/hivemind
+```
+
+- **Checkpointer** → LangGraph's `PostgresSaver`: a run paused on one replica
+  resumes on any other (verified against a live Postgres).
+- **Memory** → a plain Postgres table (text + feature-hash embedding + metadata),
+  ranked by cosine in-process. **No pgvector extension required**; every replica
+  reads/writes the same table. (For very large stores, add pgvector + an ANN
+  index — the interface doesn't change.)
+
+In-cluster, set `brain.replicas` and `brain.postgres.dsn` (one DSN, stored in the
+secret, wired to both env vars). The chart **refuses to render** if
+`replicas > 1` without a DSN, so you can't accidentally deploy replicas that
+don't share state. A UTF-8 database is expected. `/healthz` reports
+`checkpointer: postgres`.
 
 ## Run it
 

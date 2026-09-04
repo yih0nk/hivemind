@@ -45,10 +45,26 @@ from .state import TriageState
 _DEFAULT_MEMORY = object()
 
 
-def default_memory(settings: Settings) -> IncidentMemory | None:
-    """Build the incident memory from settings, or None when disabled."""
+def _build_postgres_memory(settings: Settings):
+    """A shared Postgres-backed memory (separated so tests can patch it)."""
+    from .memory import PostgresMemory
+
+    return PostgresMemory(
+        settings.memory_dsn,
+        HashingEmbeddings(settings.memory_dim),
+        settings.memory_k,
+    )
+
+
+def default_memory(settings: Settings):
+    """Build incident memory by config: shared Postgres > file-backed > in-memory.
+
+    Returns None when memory is disabled.
+    """
     if not settings.memory_enabled:
         return None
+    if settings.memory_dsn:
+        return _build_postgres_memory(settings)
     return IncidentMemory(
         HashingEmbeddings(settings.memory_dim),
         settings.memory_k,
@@ -56,20 +72,35 @@ def default_memory(settings: Settings) -> IncidentMemory | None:
     )
 
 
+def _build_postgres_checkpointer(dsn: str):
+    """A shared Postgres checkpointer (separated so tests can patch it)."""
+    import psycopg
+
+    from langgraph.checkpoint.postgres import PostgresSaver
+
+    conn = psycopg.connect(dsn, autocommit=True)
+    saver = PostgresSaver(conn)
+    saver.setup()  # idempotent: creates the checkpoint tables if absent
+    return saver
+
+
 def default_checkpointer(settings: Settings):
-    """A SQLite checkpointer when a path is set (survives restarts), else in-memory.
+    """Pick a checkpointer by config, most-shared first.
 
-    The sqlite connection uses check_same_thread=False because the API server
-    invokes the graph from a worker threadpool.
+    Postgres DSN (shared across replicas) > SQLite path (survives restart,
+    single node) > in-memory. The sqlite connection uses check_same_thread=False
+    because the API server invokes the graph from a worker threadpool.
     """
-    if not settings.checkpoint_path:
-        return MemorySaver()
-    import sqlite3
+    if settings.checkpoint_dsn:
+        return _build_postgres_checkpointer(settings.checkpoint_dsn)
+    if settings.checkpoint_path:
+        import sqlite3
 
-    from langgraph.checkpoint.sqlite import SqliteSaver
+        from langgraph.checkpoint.sqlite import SqliteSaver
 
-    conn = sqlite3.connect(settings.checkpoint_path, check_same_thread=False)
-    return SqliteSaver(conn)
+        conn = sqlite3.connect(settings.checkpoint_path, check_same_thread=False)
+        return SqliteSaver(conn)
+    return MemorySaver()
 
 
 def build_graph(
