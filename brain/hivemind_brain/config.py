@@ -48,6 +48,9 @@ class Settings:
     # SQLite file for the graph checkpointer, so paused (awaiting-approval) runs
     # survive a restart; empty = in-memory checkpointer.
     checkpoint_path: str = ""
+    # Postgres DSN for a SHARED checkpointer, so multiple brain replicas resume
+    # each other's paused runs. Takes precedence over checkpoint_path.
+    checkpoint_dsn: str = ""
 
     @property
     def resolved_provider(self) -> str:
@@ -72,6 +75,7 @@ class Settings:
             memory_dim=int(os.getenv("HIVEMIND_MEMORY_DIM", "256")),
             memory_path=os.getenv("HIVEMIND_MEMORY_PATH", ""),
             checkpoint_path=os.getenv("HIVEMIND_CHECKPOINT_PATH", ""),
+            checkpoint_dsn=os.getenv("HIVEMIND_CHECKPOINT_DSN", ""),
             gather_mode=os.getenv("HIVEMIND_GATHER_MODE", "summary").strip().lower(),
             react_max_steps=int(os.getenv("HIVEMIND_REACT_MAX_STEPS", "4")),
         )
