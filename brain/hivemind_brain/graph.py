@@ -45,10 +45,26 @@ from .state import TriageState
 _DEFAULT_MEMORY = object()
 
 
-def default_memory(settings: Settings) -> IncidentMemory | None:
-    """Build the incident memory from settings, or None when disabled."""
+def _build_postgres_memory(settings: Settings):
+    """A shared Postgres-backed memory (separated so tests can patch it)."""
+    from .memory import PostgresMemory
+
+    return PostgresMemory(
+        settings.memory_dsn,
+        HashingEmbeddings(settings.memory_dim),
+        settings.memory_k,
+    )
+
+
+def default_memory(settings: Settings):
+    """Build incident memory by config: shared Postgres > file-backed > in-memory.
+
+    Returns None when memory is disabled.
+    """
     if not settings.memory_enabled:
         return None
+    if settings.memory_dsn:
+        return _build_postgres_memory(settings)
     return IncidentMemory(
         HashingEmbeddings(settings.memory_dim),
         settings.memory_k,
