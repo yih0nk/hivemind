@@ -24,6 +24,13 @@ webhookPort: 8080
 # automatically); disable to use the operator's in-process synthesizer instead.
 brain:
   enabled: true
+  replicas: 1
+  # Shared Postgres for multi-replica: one DSN backs both the checkpointer
+  # (paused approvals) and incident memory, so replicas share state. REQUIRED
+  # when replicas > 1 (the chart refuses to render otherwise). Stored in the
+  # secret. A UTF-8 database is expected.
+  postgres:
+    dsn: ""
   image:
     repository: ghcr.io/yih0nk/hivemind-brain
     tag: latest

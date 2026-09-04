@@ -90,7 +90,11 @@ def healthz() -> dict[str, object]:
         "version": __version__,
         "provider": _settings.resolved_provider,
         "gather_mode": _settings.gather_mode,
-        "checkpointer": "sqlite" if _settings.checkpoint_path else "memory",
+        "checkpointer": (
+            "postgres" if _settings.checkpoint_dsn
+            else "sqlite" if _settings.checkpoint_path
+            else "memory"
+        ),
         "memory": {
             "enabled": _memory is not None,
             "size": _memory.size() if _memory is not None else 0,

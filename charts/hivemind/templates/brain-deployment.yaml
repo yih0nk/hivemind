@@ -1,4 +1,7 @@
 {{- if .Values.brain.enabled }}
+{{- if and (gt (int .Values.brain.replicas) 1) (not .Values.brain.postgres.dsn) }}
+{{- fail "brain.replicas > 1 requires brain.postgres.dsn (shared checkpointer + memory); otherwise replicas would not share paused approvals or memory." }}
+{{- end }}
 # LangGraph reasoning service. The operator delegates incident synthesis to it
 # when brain.enabled (see the HIVEMIND_REASONER_URL env on the operator
 # Deployment). It holds no cluster credentials -- it only reasons over the
@@ -11,7 +14,7 @@ metadata:
   labels:
     app.kubernetes.io/name: hivemind-brain
 spec:
-  replicas: 1
+  replicas: {{ .Values.brain.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: hivemind-brain
@@ -49,6 +52,19 @@ spec:
               value: {{ .Values.brain.memoryK | quote }}
             - name: HIVEMIND_GATHER_MODE
               value: {{ .Values.brain.gatherMode | quote }}
+            {{- if .Values.brain.postgres.dsn }}
+            # Shared Postgres backs both the checkpointer and incident memory.
+            - name: HIVEMIND_CHECKPOINT_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: hivemind-secrets
+                  key: HIVEMIND_PG_DSN
+            - name: HIVEMIND_MEMORY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: hivemind-secrets
+                  key: HIVEMIND_PG_DSN
+            {{- end }}
             {{- if .Values.brain.persistence.enabled }}
             - name: HIVEMIND_MEMORY_PATH
               value: {{ .Values.brain.persistence.path | quote }}
