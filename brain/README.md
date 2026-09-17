@@ -77,12 +77,23 @@ finalized incident after `finalize`. So recurring failure modes converge on what
 worked before — the brain gets better over time instead of starting cold every
 alert. Rejected proposals are not remembered.
 
-Embeddings are deterministic **feature hashing** (real cosine-similarity vectors,
-no external embedding model or API — Groq offers none), so it works everywhere
-offline; swap in a semantic embedding model for nuance. `/healthz` reports the
-store's `size` and whether it's `persisted`. Disable with
-`HIVEMIND_MEMORY_ENABLED=false` (or `brain.memoryEnabled: false`); tune recall
-breadth with `HIVEMIND_MEMORY_K`.
+Embeddings default to deterministic **feature hashing** (real cosine-similarity
+vectors, no external embedding model or API — Groq offers none), so it works
+everywhere offline. `/healthz` reports the store's `size` and whether it's
+`persisted`. Disable with `HIVEMIND_MEMORY_ENABLED=false` (or
+`brain.memoryEnabled: false`); tune recall breadth with `HIVEMIND_MEMORY_K`.
+
+**Semantic embeddings (Voyage).** Feature hashing is lexical — it matches on
+token overlap, so "pod killed for exceeding its memory limit" won't recall a
+past "OOMKilled" incident. For semantic recall, set
+`HIVEMIND_EMBEDDING_PROVIDER=voyage` (or `brain.embeddingProvider: voyage`) and
+provide a `VOYAGE_API_KEY`; model defaults to `voyage-3.5-lite`
+(`VOYAGE_MODEL` to override). Anthropic ships no embedding model, so semantic
+recall means a hosted provider, and Voyage is the one Anthropic's docs point to.
+With `voyage` selected but **no key**, the brain falls back to hashing so the
+graph still runs offline. ⚠️ Hash and Voyage vectors live in different spaces —
+**switching backend requires a fresh memory store / Postgres table**; recall
+over mixed vectors is meaningless.
 
 **Persistence.** By default the store is in-memory and evaporates on restart. Set
 `HIVEMIND_MEMORY_PATH` to snapshot it to disk (rebuilt on startup; a corrupt
