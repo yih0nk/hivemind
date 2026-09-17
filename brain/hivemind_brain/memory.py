@@ -8,8 +8,9 @@ Embeddings are deterministic **feature hashing** rather than a hosted model:
 tokens are hashed into a fixed-dimensional space and L2-normalized, so cosine
 similarity reflects token overlap with no external embedding API (Groq offers
 none) and no heavy local model. It is a real vector store, just lexical rather
-than semantic -- swap HashingEmbeddings for a semantic model when one is
-available. State lives in-process (single-replica, like the checkpointer); a
+than semantic -- for true semantic recall, select the Voyage backend
+(``voyage_embeddings``), which both stores accept via their ``embeddings`` arg.
+State lives in-process (single-replica, like the checkpointer); a
 shared/persistent store is the multi-replica upgrade.
 """
 
@@ -59,6 +60,25 @@ class HashingEmbeddings(Embeddings):
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed(text)
+
+
+def voyage_embeddings(api_key: str, model: str = "voyage-3.5-lite") -> Embeddings:
+    """Hosted semantic embeddings from Voyage AI.
+
+    Anthropic ships no embedding model, so semantic recall means an external
+    provider; Voyage is the one Anthropic's own docs point to. Returns a
+    LangChain ``Embeddings`` so it drops straight into either memory store.
+
+    The ``langchain-voyageai`` package is imported lazily: the dependency (and a
+    ``VOYAGE_API_KEY``) is only needed when this backend is actually selected,
+    so the default hash path stays offline and dependency-light. Unlike the
+    feature-hash space, Voyage vectors are semantic -- "pod killed for exceeding
+    its memory limit" recalls a past "OOMKilled" incident that lexical overlap
+    would miss.
+    """
+    from langchain_voyageai import VoyageAIEmbeddings
+
+    return VoyageAIEmbeddings(model=model, api_key=api_key)
 
 
 class IncidentMemory:

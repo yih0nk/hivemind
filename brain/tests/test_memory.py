@@ -72,6 +72,46 @@ def test_corrupt_snapshot_does_not_crash(tmp_path):
     assert mem.size() == 0
 
 
+# --- embedding backend selection ---
+
+
+def test_build_embeddings_defaults_to_hashing():
+    from hivemind_brain.config import Settings
+    from hivemind_brain.graph import build_embeddings
+
+    emb = build_embeddings(Settings())
+    assert isinstance(emb, HashingEmbeddings)
+
+
+def test_build_embeddings_voyage_without_key_falls_back_to_hashing():
+    from hivemind_brain.config import Settings
+    from hivemind_brain.graph import build_embeddings
+
+    # Voyage selected but no key -> hashing, so the graph still runs offline.
+    emb = build_embeddings(Settings(embedding_provider="voyage", voyage_api_key=None))
+    assert isinstance(emb, HashingEmbeddings)
+
+
+def test_build_embeddings_voyage_with_key_uses_voyage(monkeypatch):
+    import hivemind_brain.graph as graph_mod
+    from hivemind_brain.config import Settings
+
+    sentinel = object()
+    calls: dict[str, str] = {}
+
+    def fake_voyage(api_key, model):
+        calls["api_key"] = api_key
+        calls["model"] = model
+        return sentinel
+
+    monkeypatch.setattr(graph_mod, "voyage_embeddings", fake_voyage)
+    emb = graph_mod.build_embeddings(Settings(
+        embedding_provider="voyage", voyage_api_key="vk", voyage_model="voyage-3.5"
+    ))
+    assert emb is sentinel
+    assert calls == {"api_key": "vk", "model": "voyage-3.5"}
+
+
 # --- shared Postgres memory ---
 
 

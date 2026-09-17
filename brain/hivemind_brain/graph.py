@@ -25,7 +25,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .config import Settings
 from .llm import build_model
-from .memory import HashingEmbeddings, IncidentMemory
+from .memory import HashingEmbeddings, IncidentMemory, voyage_embeddings
 from .nodes import (
     approval_gate,
     finalize,
@@ -45,13 +45,26 @@ from .state import TriageState
 _DEFAULT_MEMORY = object()
 
 
+def build_embeddings(settings: Settings):
+    """Select the embedding backend for incident memory.
+
+    "voyage" gives hosted semantic embeddings when a key is present; every other
+    case -- "hash", an unknown value, or "voyage" with no VOYAGE_API_KEY -- falls
+    back to deterministic feature hashing, so the graph always runs offline
+    (mirrors the provider "auto" -> mock fallback in llm.py).
+    """
+    if settings.embedding_provider == "voyage" and settings.voyage_api_key:
+        return voyage_embeddings(settings.voyage_api_key, settings.voyage_model)
+    return HashingEmbeddings(settings.memory_dim)
+
+
 def _build_postgres_memory(settings: Settings):
     """A shared Postgres-backed memory (separated so tests can patch it)."""
     from .memory import PostgresMemory
 
     return PostgresMemory(
         settings.memory_dsn,
-        HashingEmbeddings(settings.memory_dim),
+        build_embeddings(settings),
         settings.memory_k,
     )
 
@@ -66,7 +79,7 @@ def default_memory(settings: Settings):
     if settings.memory_dsn:
         return _build_postgres_memory(settings)
     return IncidentMemory(
-        HashingEmbeddings(settings.memory_dim),
+        build_embeddings(settings),
         settings.memory_k,
         path=settings.memory_path or None,
     )
