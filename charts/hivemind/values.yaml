@@ -51,6 +51,13 @@ brain:
   # checkpointer); disable with memoryEnabled: false.
   memoryEnabled: true
   memoryK: 3
+  # Embedding backend for incident memory: "hash" (offline feature hashing,
+  # default) or "voyage" (hosted semantic embeddings). Voyage needs voyageApiKey;
+  # without it, falls back to hashing. NOTE: switching backend needs a fresh
+  # memory store -- hash and voyage vectors are not comparable.
+  embeddingProvider: hash
+  voyageApiKey: ""
+  voyageModel: voyage-3.5-lite
   # Persist incident memory to a mounted volume so it survives restarts.
   # When enabled, a ReadWriteOnce PVC is created and mounted at the path's dir.
   persistence:

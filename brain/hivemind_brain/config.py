@@ -43,6 +43,14 @@ class Settings:
     memory_enabled: bool = True
     memory_k: int = 3
     memory_dim: int = 256
+    # Embedding backend for incident memory: "hash" (deterministic feature
+    # hashing, offline default) or "voyage" (hosted semantic embeddings). Voyage
+    # falls back to hashing when no VOYAGE_API_KEY is set, so the graph always
+    # runs. NOTE: hash and voyage vectors are not comparable -- switching backend
+    # requires a fresh memory store / Postgres table.
+    embedding_provider: str = "hash"
+    voyage_api_key: str | None = None
+    voyage_model: str = "voyage-3.5-lite"
     # File path to persist memory across restarts; empty = in-memory only.
     memory_path: str = ""
     # Postgres DSN for a SHARED incident-memory store, so replicas learn from
@@ -76,6 +84,11 @@ class Settings:
             memory_enabled=_get_bool("HIVEMIND_MEMORY_ENABLED", True),
             memory_k=int(os.getenv("HIVEMIND_MEMORY_K", "3")),
             memory_dim=int(os.getenv("HIVEMIND_MEMORY_DIM", "256")),
+            embedding_provider=os.getenv(
+                "HIVEMIND_EMBEDDING_PROVIDER", "hash"
+            ).strip().lower(),
+            voyage_api_key=os.getenv("VOYAGE_API_KEY") or None,
+            voyage_model=os.getenv("VOYAGE_MODEL", "voyage-3.5-lite"),
             memory_path=os.getenv("HIVEMIND_MEMORY_PATH", ""),
             memory_dsn=os.getenv("HIVEMIND_MEMORY_DSN", ""),
             checkpoint_path=os.getenv("HIVEMIND_CHECKPOINT_PATH", ""),
